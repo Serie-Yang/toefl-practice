@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSheetData } from "../hooks/useSheetData";
-import { getSectionResults, recordSectionAttempt } from "../utils/progress";
+import { getSectionResults, recordSectionAttempt, recordMcAttempts } from "../utils/progress";
 
 const SECTIONS = [
   { id: "complete", label: "Complete the Words" },
@@ -12,17 +12,17 @@ const READING_INFO = {
   complete: {
     title: "30문항",
     instruction: "Complete the missing letters in every second word to restore the original text.",
-    description: "첫 문장은 제공되며, 이후 두 번째 단어마다 뒷부분이 삭제됩니다. 지문당 10개의 빈칸이 있으며, 문법과 문맥에 유의하여 삭제된 글자를 채워 문장을 완성하세요.",
+    description: "제공된 첫 문장 이후 두 번째 단어마다 뒷부분이 삭제됩니다. 문법과 문맥에 유의하여 삭제된 10개의 빈칸에 글자를 채워 문장을 완성하세요.",
   },
   daily: {
     title: "5-15문항",
     instruction: "Read a short everyday text and answer 2–3 multiple-choice questions.",
-    description: "일상에서 접할 수 있는 포스터, 이메일, SNS 게시물, 뉴스 기사 등 짧은 비학술 텍스트를 읽습니다. 내용을 파악한 후 2~3개의 객관식 문제에 답하세요.",
+    description: "일상에서 접할 수 있는 포스터, 이메일, SNS 게시물, 뉴스 기사 등 짧은 비학술 텍스트가 주어집니다. 내용을 파악한 후 2~3개의 객관식 문제에 답하세요.",
   },
   academic: {
     title: "5-15문항",
     instruction: "Read a short academic passage and answer 5 multiple-choice questions.",
-    description: "역사, 예술, 경제, 과학 등 학문적 주제의 지문(약 200단어)을 읽습니다. 사전 배경 지식 없이도 풀 수 있으며, 사실 확인, 어휘, 추론 등 5개의 객관식 문제에 답하세요.",
+    description: "역사, 예술, 경제, 과학 등 학문적 주제의 지문이 주어집니다. 사전 배경 지식 없이도 풀 수 있으며, 사실 확인, 어휘, 추론 등 5개의 객관식 문제에 답하세요.",
   },
 };
 
@@ -168,8 +168,11 @@ function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
   }
 
   function handleCheck() {
-    const correct = questions.every((question) => selected[question.n] === question.answer);
-    setResults(recordSectionAttempt(sectionKey, idx, correct));
+    const correctMap = {};
+    questions.forEach((question) => {
+      correctMap[question.n] = selected[question.n] === question.answer;
+    });
+    setResults(recordMcAttempts(sectionKey, idx, correctMap));
     setChecked(true);
   }
 
@@ -177,7 +180,7 @@ function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
     <div className="question-card reading-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
-        instruction="Read the following email/poster/notice/article/post/webpage."
+        instruction={info.instruction}
         onBack={() => setIdx(null)}
       />
 

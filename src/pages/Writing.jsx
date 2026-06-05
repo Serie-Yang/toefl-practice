@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSheetData } from "../hooks/useSheetData";
-import { getSectionResults, recordSectionAttempt } from "../utils/progress";
+import { getSectionResults, recordSectionAttempt, recordWordCount } from "../utils/progress";
 
 const SECTIONS = [
   { id: "sentence", label: "Build a Sentence" },
@@ -106,7 +106,7 @@ function BuildASentence() {
     <div className="question-card writing-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
-        instruction="Make an appropriate sentence."
+        instruction={info.instruction}
         onBack={() => setIdx(null)}
       />
       {row.prompt && <TextBlock className="task-note" text={row.prompt} />}
@@ -222,7 +222,8 @@ function LongWritingTask({ sectionId, data, loading, error, badge, minWords, tex
   }
 
   function handleShowSample() {
-    setResults(recordSectionAttempt(`writing_${sectionId}`, idx, true));
+    recordWordCount(`writing_${sectionId}`, idx, countWords(response));
+    setResults(getSectionResults(`writing_${sectionId}`));
     setShowSample(true);
   }
 
@@ -230,7 +231,7 @@ function LongWritingTask({ sectionId, data, loading, error, badge, minWords, tex
     <div className="question-card writing-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
-        instruction="Write an effective response regarding the prompt."
+        instruction={info.instruction}
         meta={formatTime(remainingSeconds)}
         onBack={() => setIdx(null)}
       />
