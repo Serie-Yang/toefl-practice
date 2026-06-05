@@ -76,6 +76,11 @@ function CompleteTheWords() {
   const answers = Array.from({ length: 10 }, (_, index) => row[`answer_${index + 1}`]).filter(Boolean);
   const tokens = buildBlankTokens(row.text, answers.length);
 
+  // inputs[blankIndex] = string[] (한 글자씩)
+  function getInputValue(blankIndex) {
+    return (inputs[blankIndex] ?? []).join("");
+  }
+
   function resetQuestion(nextIdx = idx) {
     setIdx(nextIdx);
     setInputs({});
@@ -83,7 +88,9 @@ function CompleteTheWords() {
   }
 
   function handleCheck() {
-    const correct = answers.every((answer, answerIdx) => normalizeAnswer(inputs[answerIdx]) === normalizeAnswer(answer));
+    const correct = answers.every((answer, answerIdx) =>
+      normalizeAnswer(getInputValue(answerIdx)) === normalizeAnswer(answer)
+    );
     setResults(recordSectionAttempt(sectionKey, idx, correct));
     setChecked(true);
   }
@@ -98,20 +105,48 @@ function CompleteTheWords() {
       <div className="passage-box cloze-passage">
         {tokens.map((token, tokenIdx) => {
           if (token.type === "text") return <span key={tokenIdx}>{token.value}</span>;
+
           const answer = answers[token.blankIndex] ?? "";
-          const value = inputs[token.blankIndex] ?? "";
-          const correct = normalizeAnswer(value) === normalizeAnswer(answer);
+          const letterCount = token.letterCount ?? answer.length;
+          const letters = inputs[token.blankIndex] ?? Array(letterCount).fill("");
+          const typedValue = letters.join("");
+          const isCorrect = normalizeAnswer(typedValue) === normalizeAnswer(answer);
+
+          function handleLetterChange(letterIdx, char) {
+            const next = [...(inputs[token.blankIndex] ?? Array(letterCount).fill(""))];
+            next[letterIdx] = char.slice(-1); // 한 글자만
+            setInputs((prev) => ({ ...prev, [token.blankIndex]: next }));
+            // 다음 칸으로 자동 이동
+            if (char && letterIdx < letterCount - 1) {
+              const nextInput = document.getElementById(`blank-${token.blankIndex}-${letterIdx + 1}`);
+              nextInput?.focus();
+            }
+          }
+
+          function handleLetterKeyDown(letterIdx, e) {
+            if (e.key === "Backspace" && !letters[letterIdx] && letterIdx > 0) {
+              const prevInput = document.getElementById(`blank-${token.blankIndex}-${letterIdx - 1}`);
+              prevInput?.focus();
+            }
+          }
 
           return (
-            <span className="inline-input-wrap" key={tokenIdx}>
-              <input
-                className={`inline-input ${checked ? (correct ? "correct" : "incorrect") : ""}`}
-                value={value}
-                onChange={(event) => setInputs((prev) => ({ ...prev, [token.blankIndex]: event.target.value }))}
-                disabled={checked}
-                placeholder={`${token.blankIndex + 1}`}
-              />
-              {checked && <span className="inline-answer">{correct ? "OK" : answer}</span>}
+            <span className="letter-blank-wrap" key={tokenIdx}>
+              {Array.from({ length: letterCount }, (_, letterIdx) => (
+                <input
+                  key={letterIdx}
+                  id={`blank-${token.blankIndex}-${letterIdx}`}
+                  className={`letter-input ${checked ? (isCorrect ? "correct" : "incorrect") : ""}`}
+                  value={letters[letterIdx] ?? ""}
+                  onChange={(e) => handleLetterChange(letterIdx, e.target.value)}
+                  onKeyDown={(e) => handleLetterKeyDown(letterIdx, e)}
+                  disabled={checked}
+                  maxLength={1}
+                />
+              ))}
+              {checked && (
+                <span className="inline-answer">{isCorrect ? "✓" : answer}</span>
+              )}
             </span>
           );
         })}
@@ -272,16 +307,19 @@ function ResultDots({ attempts = [] }) {
 
 function buildBlankTokens(text = "", answerCount = 0) {
   const tokens = [];
-  const pattern = /(?:_{2,}(?:\s+_{2,})*)/g;
+  // 밑줄 패턴: 연속된 _ 문자 (공백 포함 가능)
+  const pattern = /_{1,}(?:\s*_{1,})*/g;
   let lastIndex = 0;
   let blankIndex = 0;
   let match;
 
-  while ((match = pattern.exec(text)) && blankIndex < answerCount) {
+  while ((match = pattern.exec(text)) !== null && blankIndex < answerCount) {
     if (match.index > lastIndex) {
       tokens.push({ type: "text", value: text.slice(lastIndex, match.index) });
     }
-    tokens.push({ type: "blank", blankIndex });
+    // 밑줄 전체에서 _ 문자만 세어 글자 수로 사용
+    const letterCount = (match[0].match(/_/g) || []).length;
+    tokens.push({ type: "blank", blankIndex, letterCount });
     blankIndex += 1;
     lastIndex = match.index + match[0].length;
   }

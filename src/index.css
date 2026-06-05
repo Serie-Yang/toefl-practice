@@ -502,12 +502,50 @@ body {
   font-weight: 800;
 }
 
-.inline-input-wrap {
+.letter-blank-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 4px;
+  gap: 1px;
+  margin: 0 2px;
   vertical-align: middle;
+}
+
+.letter-input {
+  width: 17px;
+  height: 25px;
+  border: none;
+  border-bottom: 2px solid var(--blue-mid);
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--blue);
+  outline: none;
+  padding: 0;
+  transition: border-color 0.15s;
+  caret-color: var(--blue);
+}
+
+.letter-input:focus {
+  border-bottom-color: var(--blue);
+  background: var(--blue-light);
+  border-radius: 3px 3px 0 0;
+}
+
+.letter-input:disabled {
+  color: var(--gray-600);
+}
+
+.letter-input.correct {
+  border-bottom-color: var(--green);
+  color: var(--green);
+}
+
+.letter-input.incorrect {
+  border-bottom-color: var(--red);
+  color: var(--red);
 }
 
 .inline-input {
@@ -725,7 +763,7 @@ body {
 
 .card-actions {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr;
   align-items: center;
   margin-top: 22px;
   padding-top: 18px;
@@ -882,7 +920,7 @@ body {
   .action-cluster,
   .btn-primary,
   .btn-secondary {
-    width: auto;
+    width: 100%;
   }
 
   .action-cluster {
@@ -1010,7 +1048,7 @@ body {
 }
 
 .submit-btn:hover {
-  background: #1541887;
+  background: #154188;
 }
 
 /* ── MY MENU ── */
