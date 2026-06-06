@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSheetData } from "../hooks/useSheetData";
-import { getSectionResults, recordSectionAttempt } from "../utils/progress";
+import { useSectionProgress } from "../useProgress";
 
 const SECTIONS = [
   { id: "interview", label: "Take an Interview" },
@@ -40,14 +40,13 @@ export default function Speaking() {
 
 function TakeAnInterview() {
   const { data, loading, error } = useSheetData("interview");
-  const sectionKey = "speaking_interview";
+  const { results, record } = useSectionProgress("speaking_interview");
   const [idx, setIdx] = useState(null);
   const [questionIdx, setQuestionIdx] = useState(0);
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(45);
   const [timerRunning, setTimerRunning] = useState(false);
-  const [results, setResults] = useState(() => getSectionResults(sectionKey));
   const now = useCurrentTime(timerRunning);
   const info = SPEAKING_INFO.interview;
   const speechTimerSeconds = getSpeechTimerSeconds(timerStartedAt, timerBaseSeconds, timerRunning, now);
@@ -56,11 +55,7 @@ function TakeAnInterview() {
   const questions = useMemo(() => {
     if (!row) return [];
     return [1, 2, 3, 4]
-      .map((n) => ({
-        n,
-        question: row[`q${n}`],
-        sample: row[`q${n}_sample`],
-      }))
+      .map((n) => ({ n, question: row[`q${n}`], sample: row[`q${n}_sample`] }))
       .filter((item) => item.question);
   }, [row]);
 
@@ -73,7 +68,7 @@ function TakeAnInterview() {
         info={info}
         items={data}
         results={results}
-        onSelect={(itemIdx) => resetQuestion(itemIdx)}
+        onSelect={(i) => resetQuestion(i)}
       />
     );
   }
@@ -94,8 +89,8 @@ function TakeAnInterview() {
     }
   }
 
-  function handleShowSample() {
-    setResults(recordSectionAttempt(sectionKey, idx, true));
+  async function handleShowSample() {
+    await record(idx, true);
     setShowSample(true);
   }
 
@@ -132,7 +127,11 @@ function TakeAnInterview() {
           <span className="timer-label">Speaking timer</span>
           <strong>{formatTime(speechTimerSeconds)}</strong>
           <div className="timer-actions">
-            <button className="btn-primary" onClick={startSpeechTimer} disabled={timerRunning || speechTimerSeconds === 0}>
+            <button
+              className="btn-primary"
+              onClick={startSpeechTimer}
+              disabled={timerRunning || speechTimerSeconds === 0}
+            >
               {speechTimerSeconds === 45 ? "Start 45 sec" : "Resume"}
             </button>
             <button className="btn-secondary" onClick={resetSpeechTimer}>Reset</button>
@@ -204,14 +203,11 @@ function QuestionHeader({ badge, instruction, onBack }) {
 }
 
 function ResultDots({ attempts = [] }) {
-  const dots = Array.from({ length: 3 }, (_, dotIdx) => attempts[dotIdx]);
+  const dots = Array.from({ length: 3 }, (_, i) => attempts[i]);
   return (
     <span className="result-dots" aria-label="Recent results">
-      {dots.map((result, dotIdx) => (
-        <span
-          key={dotIdx}
-          className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`}
-        />
+      {dots.map((result, i) => (
+        <span key={i} className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`} />
       ))}
     </span>
   );
@@ -220,8 +216,8 @@ function ResultDots({ attempts = [] }) {
 function TextBlock({ className, text }) {
   return (
     <div className={className}>
-      {text.split(/\n/).map((line, lineIdx) => (
-        <p key={lineIdx}>{line || "\u00a0"}</p>
+      {text.split(/\n/).map((line, i) => (
+        <p key={i}>{line || "\u00a0"}</p>
       ))}
     </div>
   );
@@ -229,31 +225,24 @@ function TextBlock({ className, text }) {
 
 function useCurrentTime(active) {
   const [now, setNow] = useState(() => Date.now());
-
   useEffect(() => {
     if (!active) return undefined;
-
-    const intervalId = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
   }, [active]);
-
   return now;
 }
 
 function getSpeechTimerSeconds(startedAt, baseSeconds, running, now) {
   if (!running || startedAt === null) return baseSeconds;
-
-  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
-  return Math.max(baseSeconds - elapsedSeconds, 0);
+  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return Math.max(baseSeconds - elapsed, 0);
 }
 
 function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function getProblemLabel(row, itemIdx) {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSheetData } from "../hooks/useSheetData";
-import { getSectionResults, recordSectionAttempt, recordWordCount } from "../utils/progress";
+import { useSectionProgress } from "../useProgress";
 
 const SECTIONS = [
   { id: "sentence", label: "Build a Sentence" },
@@ -54,11 +54,10 @@ export default function Writing() {
 
 function BuildASentence() {
   const { data, loading, error } = useSheetData("build_sentence");
-  const sectionKey = "writing_sentence";
+  const { results, record } = useSectionProgress("writing_sentence");
   const [idx, setIdx] = useState(null);
   const [picked, setPicked] = useState([]);
   const [checked, setChecked] = useState(false);
-  const [results, setResults] = useState(() => getSectionResults(sectionKey));
   const info = WRITING_INFO.sentence;
 
   const row = idx === null ? null : data[idx];
@@ -76,7 +75,7 @@ function BuildASentence() {
         info={info}
         items={data}
         results={results}
-        onSelect={(itemIdx) => resetQuestion(itemIdx)}
+        onSelect={(i) => resetQuestion(i)}
       />
     );
   }
@@ -97,8 +96,8 @@ function BuildASentence() {
     setChecked(false);
   }
 
-  function handleCheck() {
-    setResults(recordSectionAttempt(sectionKey, idx, isCorrect));
+  async function handleCheck() {
+    await record(idx, isCorrect);
     setChecked(true);
   }
 
@@ -164,7 +163,6 @@ function WriteAnEmail() {
       data={data}
       loading={loading}
       error={error}
-      badge="Write an Email"
       minWords={80}
       textareaLabel="Email response"
     />
@@ -179,7 +177,6 @@ function AcademicDiscussion() {
       data={data}
       loading={loading}
       error={error}
-      badge="Academic Discussion"
       minWords={100}
       textareaLabel="Discussion post"
       showDiscussion
@@ -187,12 +184,12 @@ function AcademicDiscussion() {
   );
 }
 
-function LongWritingTask({ sectionId, data, loading, error, badge, minWords, textareaLabel, showDiscussion = false }) {
+function LongWritingTask({ sectionId, data, loading, error, minWords, textareaLabel, showDiscussion = false }) {
+  const { results, record } = useSectionProgress(`writing_${sectionId}`);
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
-  const [results, setResults] = useState(() => getSectionResults(`writing_${sectionId}`));
   const info = WRITING_INFO[sectionId];
   const timerSeconds = sectionId === "email" ? 7 * 60 : 10 * 60;
   const remainingSeconds = useAutoCountdown(timerStartedAt, timerSeconds);
@@ -206,7 +203,7 @@ function LongWritingTask({ sectionId, data, loading, error, badge, minWords, tex
         info={info}
         items={data}
         results={results}
-        onSelect={(itemIdx) => resetQuestion(itemIdx)}
+        onSelect={(i) => resetQuestion(i)}
       />
     );
   }
@@ -221,9 +218,8 @@ function LongWritingTask({ sectionId, data, loading, error, badge, minWords, tex
     setTimerStartedAt(Date.now());
   }
 
-  function handleShowSample() {
-    recordWordCount(`writing_${sectionId}`, idx, countWords(response));
-    setResults(getSectionResults(`writing_${sectionId}`));
+  async function handleShowSample() {
+    await record(idx, true);
     setShowSample(true);
   }
 
@@ -254,7 +250,7 @@ function LongWritingTask({ sectionId, data, loading, error, badge, minWords, tex
             id="writing-response"
             className="writing-textarea"
             value={response}
-            onChange={(event) => setResponse(event.target.value)}
+            onChange={(e) => setResponse(e.target.value)}
             placeholder={`Write at least ${minWords} words.`}
           />
           <div className={words >= minWords ? "word-status ready" : "word-status"}>
@@ -305,24 +301,18 @@ function SectionHome({ info, items, results, onSelect }) {
 }
 
 function ResultDots({ attempts = [] }) {
-  const dots = Array.from({ length: 3 }, (_, dotIdx) => attempts[dotIdx]);
+  const dots = Array.from({ length: 3 }, (_, i) => attempts[i]);
   return (
     <span className="result-dots" aria-label="Recent results">
-      {dots.map((result, dotIdx) => (
-        <span
-          key={dotIdx}
-          className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`}
-        />
+      {dots.map((result, i) => (
+        <span key={i} className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`} />
       ))}
     </span>
   );
 }
 
 function splitWords(value = "") {
-  return value
-    .split("|")
-    .map((word) => word.trim())
-    .filter(Boolean);
+  return value.split("|").map((w) => w.trim()).filter(Boolean);
 }
 
 function normalizeAnswer(value = "") {
@@ -364,8 +354,8 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext, checkLa
 function TextBlock({ className, text }) {
   return (
     <div className={className}>
-      {text.split(/\n/).map((line, lineIdx) => (
-        <p key={lineIdx}>{line || "\u00a0"}</p>
+      {text.split(/\n/).map((line, i) => (
+        <p key={i}>{line || "\u00a0"}</p>
       ))}
     </div>
   );
@@ -373,33 +363,25 @@ function TextBlock({ className, text }) {
 
 function useAutoCountdown(startedAt, initialSeconds) {
   const now = useCurrentTime(startedAt !== null);
-
   if (startedAt === null) return initialSeconds;
-
-  const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
-  return Math.max(initialSeconds - elapsedSeconds, 0);
+  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
+  return Math.max(initialSeconds - elapsed, 0);
 }
 
 function useCurrentTime(active) {
   const [now, setNow] = useState(() => Date.now());
-
   useEffect(() => {
     if (!active) return undefined;
-
-    const intervalId = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
   }, [active]);
-
   return now;
 }
 
 function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function getProblemLabel(row, itemIdx) {

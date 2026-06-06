@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSheetData } from "../hooks/useSheetData";
-import { getSectionResults, recordSectionAttempt, recordMcAttempts } from "../utils/progress";
+import { useSectionProgress } from "../useProgress";
 
 const SECTIONS = [
   { id: "complete", label: "Complete the Words" },
@@ -11,7 +11,7 @@ const SECTIONS = [
 const READING_INFO = {
   complete: {
     title: "30문항",
-    instruction: "Complete the missing letters in every second word to restore the original text.",
+    instruction: "Fill in the missing letters in a paragraph.",
     description: "제공된 첫 문장 이후 두 번째 단어마다 뒷부분이 삭제됩니다. 문법과 문맥에 유의하여 삭제된 10개의 빈칸에 글자를 채워 문장을 완성하세요.",
   },
   daily: {
@@ -21,7 +21,7 @@ const READING_INFO = {
   },
   academic: {
     title: "5-15문항",
-    instruction: "Read a short academic passage and answer 5 multiple-choice questions.",
+    instruction: "Read an academic passage and answer 5 multiple-choice questions.",
     description: "역사, 예술, 경제, 과학 등 학문적 주제의 지문이 주어집니다. 사전 배경 지식 없이도 풀 수 있으며, 사실 확인, 어휘, 추론 등 5개의 객관식 문제에 답하세요.",
   },
 };
@@ -46,10 +46,10 @@ export default function Reading() {
       <div className="question-area">
         {activeSection === "complete" && <CompleteTheWords />}
         {activeSection === "daily" && (
-          <ReadingPassage sectionId="daily" sheetKey="daily_life" badge="Daily Life" maxQuestions={3} />
+          <ReadingPassage sectionId="daily" sheetKey="daily_life" maxQuestions={3} />
         )}
         {activeSection === "academic" && (
-          <ReadingPassage sectionId="academic" sheetKey="academic_passage" badge="Academic" maxQuestions={5} />
+          <ReadingPassage sectionId="academic" sheetKey="academic_passage" maxQuestions={5} />
         )}
       </div>
     </div>
@@ -58,25 +58,23 @@ export default function Reading() {
 
 function CompleteTheWords() {
   const { data, loading, error } = useSheetData("complete_words");
-  const sectionKey = "reading_complete";
+  const { results, record } = useSectionProgress("reading_complete");
   const [idx, setIdx] = useState(null);
   const [inputs, setInputs] = useState({});
   const [checked, setChecked] = useState(false);
-  const [results, setResults] = useState(() => getSectionResults(sectionKey));
   const info = READING_INFO.complete;
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
   if (!data.length) return <EmptyCard />;
   if (idx === null) {
-    return <SectionHome info={info} items={data} results={results} onSelect={(itemIdx) => resetQuestion(itemIdx)} />;
+    return <SectionHome info={info} items={data} results={results} onSelect={(i) => resetQuestion(i)} />;
   }
 
   const row = data[idx];
-  const answers = Array.from({ length: 10 }, (_, index) => row[`answer_${index + 1}`]).filter(Boolean);
+  const answers = Array.from({ length: 10 }, (_, i) => row[`answer_${i + 1}`]).filter(Boolean);
   const tokens = buildBlankTokens(row.text, answers.length);
 
-  // inputs[blankIndex] = string[] (한 글자씩)
   function getInputValue(blankIndex) {
     return (inputs[blankIndex] ?? []).join("");
   }
@@ -87,11 +85,11 @@ function CompleteTheWords() {
     setChecked(false);
   }
 
-  function handleCheck() {
-    const correct = answers.every((answer, answerIdx) =>
-      normalizeAnswer(getInputValue(answerIdx)) === normalizeAnswer(answer)
+  async function handleCheck() {
+    const correct = answers.every((answer, i) =>
+      normalizeAnswer(getInputValue(i)) === normalizeAnswer(answer)
     );
-    setResults(recordSectionAttempt(sectionKey, idx, correct));
+    await record(idx, correct);
     setChecked(true);
   }
 
@@ -114,19 +112,16 @@ function CompleteTheWords() {
 
           function handleLetterChange(letterIdx, char) {
             const next = [...(inputs[token.blankIndex] ?? Array(letterCount).fill(""))];
-            next[letterIdx] = char.slice(-1); // 한 글자만
+            next[letterIdx] = char.slice(-1);
             setInputs((prev) => ({ ...prev, [token.blankIndex]: next }));
-            // 다음 칸으로 자동 이동
             if (char && letterIdx < letterCount - 1) {
-              const nextInput = document.getElementById(`blank-${token.blankIndex}-${letterIdx + 1}`);
-              nextInput?.focus();
+              document.getElementById(`blank-${token.blankIndex}-${letterIdx + 1}`)?.focus();
             }
           }
 
           function handleLetterKeyDown(letterIdx, e) {
             if (e.key === "Backspace" && !letters[letterIdx] && letterIdx > 0) {
-              const prevInput = document.getElementById(`blank-${token.blankIndex}-${letterIdx - 1}`);
-              prevInput?.focus();
+              document.getElementById(`blank-${token.blankIndex}-${letterIdx - 1}`)?.focus();
             }
           }
 
@@ -164,37 +159,31 @@ function CompleteTheWords() {
   );
 }
 
-function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
+function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   const { data, loading, error } = useSheetData(sheetKey);
-  const sectionKey = `reading_${sectionId}`;
+  const { results, record } = useSectionProgress(`reading_${sectionId}`);
   const [idx, setIdx] = useState(null);
   const [selected, setSelected] = useState({});
   const [checked, setChecked] = useState(false);
-  const [results, setResults] = useState(() => getSectionResults(sectionKey));
   const info = READING_INFO[sectionId];
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
   if (!data.length) return <EmptyCard />;
   if (idx === null) {
-    return <SectionHome info={info} items={data} results={results} onSelect={(itemIdx) => resetQuestion(itemIdx)} />;
+    return <SectionHome info={info} items={data} results={results} onSelect={(i) => resetQuestion(i)} />;
   }
 
   const row = data[idx];
-  const questions = Array.from({ length: maxQuestions }, (_, index) => {
-    const n = index + 1;
+  const questions = Array.from({ length: maxQuestions }, (_, i) => {
+    const n = i + 1;
     return {
       n,
       q: row[`q${n}`],
-      choices: {
-        a: row[`q${n}_a`],
-        b: row[`q${n}_b`],
-        c: row[`q${n}_c`],
-        d: row[`q${n}_d`],
-      },
+      choices: { a: row[`q${n}_a`], b: row[`q${n}_b`], c: row[`q${n}_c`], d: row[`q${n}_d`] },
       answer: row[`q${n}_answer`]?.toLowerCase(),
     };
-  }).filter((question) => question.q);
+  }).filter((q) => q.q);
 
   function resetQuestion(nextIdx = idx) {
     setIdx(nextIdx);
@@ -202,12 +191,9 @@ function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
     setChecked(false);
   }
 
-  function handleCheck() {
-    const correctMap = {};
-    questions.forEach((question) => {
-      correctMap[question.n] = selected[question.n] === question.answer;
-    });
-    setResults(recordMcAttempts(sectionKey, idx, correctMap));
+  async function handleCheck() {
+    const allCorrect = questions.every((q) => selected[q.n] === q.answer);
+    await record(idx, allCorrect);
     setChecked(true);
   }
 
@@ -228,9 +214,7 @@ function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
         <section className="mc-questions">
           {questions.map(({ n, q, choices, answer }) => (
             <div key={n} className="mc-question">
-              <p className="mc-q-text">
-                <strong>Q{n}.</strong> {q}
-              </p>
+              <p className="mc-q-text"><strong>Q{n}.</strong> {q}</p>
               {Object.entries(choices).map(([opt, val]) => {
                 const isSelected = selected[n] === opt;
                 const isCorrect = answer === opt;
@@ -241,7 +225,6 @@ function ReadingPassage({ sectionId, sheetKey, badge, maxQuestions }) {
                 } else if (isSelected) {
                   cls += " selected";
                 }
-
                 return (
                   <button
                     key={opt}
@@ -292,14 +275,11 @@ function SectionHome({ info, items, results, onSelect }) {
 }
 
 function ResultDots({ attempts = [] }) {
-  const dots = Array.from({ length: 3 }, (_, dotIdx) => attempts[dotIdx]);
+  const dots = Array.from({ length: 3 }, (_, i) => attempts[i]);
   return (
     <span className="result-dots" aria-label="Recent results">
-      {dots.map((result, dotIdx) => (
-        <span
-          key={dotIdx}
-          className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`}
-        />
+      {dots.map((result, i) => (
+        <span key={i} className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`} />
       ))}
     </span>
   );
@@ -307,7 +287,6 @@ function ResultDots({ attempts = [] }) {
 
 function buildBlankTokens(text = "", answerCount = 0) {
   const tokens = [];
-  // 밑줄 패턴: 연속된 _ 문자 (공백 포함 가능)
   const pattern = /_{1,}(?:\s*_{1,})*/g;
   let lastIndex = 0;
   let blankIndex = 0;
@@ -317,7 +296,6 @@ function buildBlankTokens(text = "", answerCount = 0) {
     if (match.index > lastIndex) {
       tokens.push({ type: "text", value: text.slice(lastIndex, match.index) });
     }
-    // 밑줄 전체에서 _ 문자만 세어 글자 수로 사용
     const letterCount = (match[0].match(/_/g) || []).length;
     tokens.push({ type: "blank", blankIndex, letterCount });
     blankIndex += 1;

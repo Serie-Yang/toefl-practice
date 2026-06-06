@@ -2,15 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deleteUser, updatePassword } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
-import {
-  PROGRESS_SECTIONS,
-  clearProgress,
-  getAccuracy,
-  getMcAccuracy,
-  getAvgWordCount,
-  getInterviewCount,
-  getGroupAccuracy,
-} from "../utils/progress";
+import { useAllProgress } from "../useProgress";
 
 export default function MyMenu() {
   const { user } = useAuth();
@@ -18,7 +10,7 @@ export default function MyMenu() {
   const [newPassword, setNewPassword] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [refreshKey, setRefreshKey] = useState(0);
+  const { data: progressData, clear } = useAllProgress();
 
   async function handlePasswordChange(event) {
     event.preventDefault();
@@ -37,11 +29,10 @@ export default function MyMenu() {
     }
   }
 
-  function handleResetProgress() {
+  async function handleResetProgress() {
     const confirmed = window.confirm("모든 학습 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.");
     if (!confirmed) return;
-    clearProgress();
-    setRefreshKey((k) => k + 1);
+    await clear();
     setStatus("학습 기록이 모두 삭제되었습니다.");
     setError("");
   }
@@ -52,7 +43,7 @@ export default function MyMenu() {
     setStatus("");
     setError("");
     try {
-      clearProgress();
+      await clear();
       await deleteUser(user);
       navigate("/login");
     } catch (err) {
@@ -100,127 +91,36 @@ export default function MyMenu() {
         {error && <div className="error-message">{error}</div>}
       </section>
 
-      <div className="mymenu-grid" key={refreshKey}>
-        <ReadingProgress />
-        <WritingProgress />
-        <SpeakingProgress />
+      <div className="mymenu-grid">
+        {progressData === null ? (
+          <p style={{ color: "var(--gray-400)", fontSize: 14 }}>기록을 불러오는 중...</p>
+        ) : (
+          progressData.map((section) => (
+            <SectionProgress key={section.title} {...section} />
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-/* ── READING ── */
-function ReadingProgress() {
-  const complete = getAccuracy("reading_complete");
-  const daily = getMcAccuracy("reading_daily");
-  const academic = getMcAccuracy("reading_academic");
-
-  const allAttempted = complete.attempted + daily.attempted + academic.attempted;
-  const allCorrect = complete.correct + daily.correct + academic.correct;
-  const groupPercent = allAttempted ? Math.round((allCorrect / allAttempted) * 100) : null;
-  const groupSummary = { attempted: allAttempted, correct: allCorrect, percent: groupPercent };
-
+function SectionProgress({ title, summary, subsections }) {
   return (
     <div className="progress-card">
       <div className="progress-card-header">
         <div>
-          <h3>Reading</h3>
+          <h3>{title}</h3>
+          <p>최근 20문제 정답률</p>
         </div>
-        <AccuracyBadge accuracy={groupSummary} large />
+        <AccuracyBadge accuracy={summary} large />
       </div>
       <div className="progress-subsections">
-        <SubsectionAccuracy label="Complete the Words" accuracy={complete} />
-        <SubsectionAccuracy label="Read in Daily Life" accuracy={daily} />
-        <SubsectionAccuracy label="Read an Academic Passage" accuracy={academic} />
-      </div>
-    </div>
-  );
-}
-
-/* ── WRITING ── */
-function WritingProgress() {
-  const sentence = getAccuracy("writing_sentence");
-  const email = getAvgWordCount("writing_email");
-  const discussion = getAvgWordCount("writing_discussion");
-
-  return (
-    <div className="progress-card">
-      <div className="progress-card-header">
-        <div>
-          <h3>Writing</h3>
-        </div>
-        <AccuracyBadge accuracy={sentence} large />
-      </div>
-      <div className="progress-subsections">
-        <SubsectionAccuracy label="Build a Sentence" accuracy={sentence} />
-        <SubsectionWordCount label="Write an Email" stat={email} targetWords={130} />
-        <SubsectionWordCount label="Academic Discussion" stat={discussion} targetWords={120} />
-      </div>
-    </div>
-  );
-}
-
-/* ── SPEAKING ── */
-function SpeakingProgress() {
-  const count = getInterviewCount("speaking_interview");
-
-  return (
-    <div className="progress-card">
-      <div className="progress-card-header">
-        <div>
-          <h3>Speaking</h3>
-        </div>
-        <div className="accuracy-badge large">
-          <strong style={{ color: "var(--blue)", fontSize: 19 }}>{count}</strong>
-          <span>문제</span>
-        </div>
-      </div>
-      <div className="progress-subsections">
-        <div className="progress-subsection">
-          <span className="subsection-name">Take an Interview</span>
-          <div className="accuracy-row">
-            <div style={{ flex: 1 }} />
-            <div className="accuracy-badge">
-              <strong>{count}문제</strong>
-            </div>
+        {subsections.map((subsection) => (
+          <div key={subsection.key} className="progress-subsection">
+            <span className="subsection-name">{subsection.label}</span>
+            <AccuracyBar accuracy={subsection.accuracy} />
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── SHARED SUB-COMPONENTS ── */
-function SubsectionAccuracy({ label, accuracy }) {
-  const percent = accuracy.percent ?? 0;
-  return (
-    <div className="progress-subsection">
-      <span className="subsection-name">{label}</span>
-      <div className="accuracy-row">
-        <div className="accuracy-track" aria-hidden="true">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-        <AccuracyBadge accuracy={accuracy} />
-      </div>
-    </div>
-  );
-}
-
-function SubsectionWordCount({ label, stat, targetWords }) {
-  const avg = stat.avg ?? 0;
-  const barPercent = Math.min(Math.round((avg / targetWords) * 100), 100);
-
-  return (
-    <div className="progress-subsection">
-      <span className="subsection-name">{label}</span>
-      <div className="accuracy-row">
-        <div className="accuracy-track" aria-hidden="true">
-          <span style={{ width: `${barPercent}%` }} />
-        </div>
-        <div className="accuracy-badge">
-          <strong>{stat.avg !== null ? `${stat.avg}단어` : "--"}</strong>
-          <span>/{stat.attempted}문제</span>
-        </div>
+        ))}
       </div>
     </div>
   );
@@ -232,6 +132,18 @@ function AccuracyBadge({ accuracy, large = false }) {
     <div className={large ? "accuracy-badge large" : "accuracy-badge"}>
       <strong>{label}</strong>
       <span>{accuracy.correct}/{accuracy.attempted}</span>
+    </div>
+  );
+}
+
+function AccuracyBar({ accuracy }) {
+  const percent = accuracy.percent ?? 0;
+  return (
+    <div className="accuracy-row">
+      <div className="accuracy-track" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <AccuracyBadge accuracy={accuracy} />
     </div>
   );
 }

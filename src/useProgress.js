@@ -1,0 +1,157 @@
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "./context/AuthContext";
+import { db } from "./firebase";
+import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+
+// ── Firestore 경로 헬퍼 ──────────────────────────────────────
+// users/{uid}/progress/{sectionKey}
+
+const PROGRESS_SECTIONS = [
+  { key: "reading_complete",   group: "Reading", label: "Complete the Words" },
+  { key: "reading_daily",      group: "Reading", label: "Read in Daily Life" },
+  { key: "reading_academic",   group: "Reading", label: "Read an Academic Passage" },
+  { key: "writing_sentence",   group: "Writing", label: "Build a Sentence" },
+  { key: "writing_email",      group: "Writing", label: "Write an Email" },
+  { key: "writing_discussion", group: "Writing", label: "Write for an Academic Discussion" },
+  { key: "speaking_interview", group: "Speaking", label: "Take an Interview" },
+];
+
+function sectionRef(uid, sectionKey) {
+  return doc(db, "users", uid, "progress", sectionKey);
+}
+
+async function readSection(uid, sectionKey) {
+  const snap = await getDoc(sectionRef(uid, sectionKey));
+  return snap.exists() ? snap.data() : { attempts: [], byProblem: {} };
+}
+
+async function getSectionResults(uid, sectionKey) {
+  const data = await readSection(uid, sectionKey);
+  return data.byProblem ?? {};
+}
+
+async function recordSectionAttempt(uid, sectionKey, problemIndex, correct) {
+  const section = await readSection(uid, sectionKey);
+  const result = Boolean(correct);
+  const attempt = { correct: result, problemIndex, timestamp: Date.now() };
+
+  const nextSection = {
+    attempts: [attempt, ...(section.attempts ?? [])].slice(0, 200),
+    byProblem: {
+      ...(section.byProblem ?? {}),
+      [problemIndex]: [
+        result,
+        ...((section.byProblem ?? {})[problemIndex] ?? []),
+      ].slice(0, 3),
+    },
+  };
+
+  await setDoc(sectionRef(uid, sectionKey), nextSection);
+  return nextSection.byProblem;
+}
+
+async function getRecentAccuracy(uid, sectionKey, limit = 20) {
+  const data = await readSection(uid, sectionKey);
+  const recent = (data.attempts ?? []).slice(0, limit);
+  const correct = recent.filter((a) => a.correct).length;
+  return {
+    attempted: recent.length,
+    correct,
+    percent: recent.length ? Math.round((correct / recent.length) * 100) : null,
+  };
+}
+
+async function getGroupRecentAccuracy(uid, group, limit = 20) {
+  const keys = PROGRESS_SECTIONS.filter((s) => s.group === group).map((s) => s.key);
+
+  const allAttempts = (await Promise.all(keys.map((key) => readSection(uid, key))))
+    .flatMap((data) => data.attempts ?? [])
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
+    .slice(0, limit);
+
+  const correct = allAttempts.filter((a) => a.correct).length;
+  return {
+    attempted: allAttempts.length,
+    correct,
+    percent: allAttempts.length ? Math.round((correct / allAttempts.length) * 100) : null,
+  };
+}
+
+async function clearProgress(uid) {
+  await Promise.all(
+    PROGRESS_SECTIONS.map((s) => deleteDoc(sectionRef(uid, s.key)))
+  );
+}
+
+// ── React 훅 ────────────────────────────────────────────────
+
+/**
+ * 섹션 결과 로드 + 기록 훅
+ * Reading / Writing / Speaking 컴포넌트에서 사용
+ */
+export function useSectionProgress(sectionKey) {
+  const { user } = useAuth();
+  const uid = user?.uid;
+
+  const [results, setResults] = useState({});
+
+  useEffect(() => {
+    if (!uid) return;
+    getSectionResults(uid, sectionKey).then(setResults);
+  }, [uid, sectionKey]);
+
+  const record = useCallback(
+    async (problemIndex, correct) => {
+      if (!uid) return {};
+      const updated = await recordSectionAttempt(uid, sectionKey, problemIndex, correct);
+      setResults(updated);
+      return updated;
+    },
+    [uid, sectionKey]
+  );
+
+  return { results, record };
+}
+
+/**
+ * MyMenu용: 전체 섹션 정확도 로드
+ */
+export function useAllProgress() {
+  const { user } = useAuth();
+  const uid = user?.uid;
+
+  const [data, setData] = useState(null); // null = 로딩 중
+
+  const load = useCallback(async () => {
+    if (!uid) return;
+    const groups = ["Reading", "Writing", "Speaking"];
+
+    const [groupAccuracies, sectionAccuracies] = await Promise.all([
+      Promise.all(groups.map((g) => getGroupRecentAccuracy(uid, g))),
+      Promise.all(PROGRESS_SECTIONS.map((s) => getRecentAccuracy(uid, s.key))),
+    ]);
+
+    const result = groups.map((group, gi) => ({
+      title: group,
+      summary: groupAccuracies[gi],
+      subsections: PROGRESS_SECTIONS
+        .filter((s) => s.group === group)
+        .map((s) => ({
+          ...s,
+          accuracy: sectionAccuracies[PROGRESS_SECTIONS.indexOf(s)],
+        })),
+    }));
+
+    setData(result);
+  }, [uid]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const clear = useCallback(async () => {
+    if (!uid) return;
+    await clearProgress(uid);
+    await load();
+  }, [uid, load]);
+
+  return { data, reload: load, clear };
+}
