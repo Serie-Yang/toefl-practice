@@ -11,6 +11,11 @@ const SPEAKING_INFO = {
     title: "4문항",
     instruction: "Participate in a simulated conversation with a prerecorded interviewer.",
     description: "다양한 상황에 맞게 인터뷰 질문이 출제됩니다. 각 인터뷰는 4개의 질문으로 구성되어 있으며, 각 질문마다 45초의 답변 시간이 주어집니다. 첫 질문은 개인적인 경험이나 의견을 묻는 질문으로 시작하여, 점차 넓은 범위의 주제에 대한 질문으로 이어집니다.",
+    tips: [
+      "첫 5초 안에 질문에 직접 답하세요. 결론을 먼저 말한 뒤 이유를 설명하는 것이 좋습니다.",
+      "답변은 '의견 → 이유 → 예시' 구조로 말하면 45초를 자연스럽게 채울 수 있습니다.",
+      "실제 시험은 녹음된 인터뷰어와 진행하므로, 화면에 질문이 표시되는 현재 연습보다 어렵습니다. 질문을 들으며 할말을 생각하는 연습도 필요합니다.",
+    ],
   },
 };
 
@@ -44,6 +49,7 @@ function TakeAnInterview() {
   const [idx, setIdx] = useState(null);
   const [questionIdx, setQuestionIdx] = useState(0);
   const [showSample, setShowSample] = useState(false);
+  const [shownSamples, setShownSamples] = useState(new Set());
   const [timerStartedAt, setTimerStartedAt] = useState(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(45);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -79,6 +85,7 @@ function TakeAnInterview() {
     setIdx(nextInterview);
     setQuestionIdx(nextQuestion);
     setShowSample(false);
+    setShownSamples(new Set());
     resetSpeechTimer();
   }
 
@@ -90,8 +97,12 @@ function TakeAnInterview() {
   }
 
   async function handleShowSample() {
-    await record(idx, true);
+    const next = new Set(shownSamples).add(questionIdx);
+    setShownSamples(next);
     setShowSample(true);
+    if (next.size === questions.length) {
+      await record(idx, true);
+    }
   }
 
   function startSpeechTimer() {
@@ -106,6 +117,8 @@ function TakeAnInterview() {
     setTimerBaseSeconds(45);
     setTimerRunning(false);
   }
+
+  
 
   return (
     <div className="question-card speaking-card">
@@ -174,6 +187,16 @@ function SectionHome({ info, items, results, onSelect }) {
         <span className="q-badge">{info.title}</span>
         <h2>{info.instruction}</h2>
         <p>{info.description}</p>
+        {info.tips && (
+          <div className="tip-box">
+            {info.tips.map((tip, i) => (
+              <div key={i} className="tip-item">
+                <span className="tip-icon">💡</span>
+                <span><strong>Tip</strong> {tip}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="problem-list">
         {items.map((row, itemIdx) => (

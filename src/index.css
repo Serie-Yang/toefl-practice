@@ -1218,3 +1218,35 @@ body {
   color: var(--blue);
   font-size: 19px;
 }
+
+/* ── TIPS ── */
+.tip-box {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tip-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--gray-800);
+  line-height: 1.6;
+}
+
+.tip-icon {
+  flex-shrink: 0;
+  font-size: 15px;
+  margin-top: 1px;
+}
+
+.tip-item strong {
+  color: #92400e;
+  margin-right: 4px;
+}

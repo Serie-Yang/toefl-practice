@@ -13,16 +13,30 @@ const READING_INFO = {
     title: "30문항",
     instruction: "Fill in the missing letters in a paragraph.",
     description: "제공된 첫 문장 이후 두 번째 단어마다 뒷부분이 삭제됩니다. 문법과 문맥에 유의하여 삭제된 10개의 빈칸에 글자를 채워 문장을 완성하세요.",
+    tips: [
+      "앞뒤 문맥을 먼저 읽고 품사(명사/동사/형용사)를 파악하면 철자 유추가 쉬워집니다.",
+      "동사라면 시제와 수 일치(단수/복수)를 반드시 확인하세요.",
+    ],
   },
   daily: {
     title: "5-15문항",
     instruction: "Read a short everyday text and answer 2–3 multiple-choice questions.",
     description: "일상에서 접할 수 있는 포스터, 이메일, SNS 게시물, 뉴스 기사 등 짧은 비학술 텍스트가 주어집니다. 내용을 파악한 후 2~3개의 객관식 문제에 답하세요.",
+    tips: [
+      "문제를 먼저 읽고 무엇을 찾아야 하는지 확인한 뒤 본문을 읽으면 시간을 절약할 수 있습니다.",
+      "오답 보기는 본문 단어를 그대로 사용하면서 의미를 살짝 바꾸는 경우가 많습니다. 핵심 의미가 정확히 일치하는지 확인하세요.",
+      "정답은 대부분 본문에서 직접 확인할 수 있습니다. 자신의 경험이나 상식보다 지문의 정보로 객관적 판단을 하는 것이 필요합니다.",
+    ],
   },
   academic: {
     title: "5-15문항",
     instruction: "Read an academic passage and answer 5 multiple-choice questions.",
     description: "역사, 예술, 경제, 과학 등 학문적 주제의 지문이 주어집니다. 사전 배경 지식 없이도 풀 수 있으며, 사실 확인, 어휘, 추론 등 5개의 객관식 문제에 답하세요.",
+    tips: [
+      "각 단락의 첫 문장을 읽으면 글의 구조와 핵심 내용을 빠르게 파악할 수 있습니다.",
+      "어휘 문제는 해당 단어를 지우고 선택지를 대입해 문맥에 가장 자연스러운 것을 고르세요.",
+      "추론 문제도 반드시 지문 근거가 있어야 합니다. '그럴 것 같다'는 선택지는 오답일 가능성이 높습니다.",
+    ],
   },
 };
 
@@ -161,7 +175,7 @@ function CompleteTheWords() {
 
 function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   const { data, loading, error } = useSheetData(sheetKey);
-  const { results, record } = useSectionProgress(`reading_${sectionId}`);
+  const { results, recordMc } = useSectionProgress(`reading_${sectionId}`);
   const [idx, setIdx] = useState(null);
   const [selected, setSelected] = useState({});
   const [checked, setChecked] = useState(false);
@@ -192,8 +206,9 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   }
 
   async function handleCheck() {
-    const allCorrect = questions.every((q) => selected[q.n] === q.answer);
-    await record(idx, allCorrect);
+    const correctMap = {};
+    questions.forEach((q) => { correctMap[q.n] = selected[q.n] === q.answer; });
+    await recordMc(idx, correctMap);
     setChecked(true);
   }
 
@@ -260,6 +275,16 @@ function SectionHome({ info, items, results, onSelect }) {
         <span className="q-badge">{info.title}</span>
         <h2>{info.instruction}</h2>
         <p>{info.description}</p>
+        {info.tips && (
+          <div className="tip-box">
+            {info.tips.map((tip, i) => (
+              <div key={i} className="tip-item">
+                <span className="tip-icon">💡</span>
+                <span><strong>Tip</strong> {tip}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <div className="problem-list">
         {items.map((row, itemIdx) => (
