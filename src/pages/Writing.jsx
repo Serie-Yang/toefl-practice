@@ -58,30 +58,13 @@ function BuildASentence() {
   const [idx, setIdx] = useState(null);
   const [picked, setPicked] = useState([]);
   const [checked, setChecked] = useState(false);
-  const [timerStartedAt, setTimerStartedAt] = useState(null);
-  const [timerExpired, setTimerExpired] = useState(false);
   const info = WRITING_INFO.sentence;
-  const SENTENCE_SECONDS = 45;
-
-  const now = useCurrentTime(timerStartedAt !== null && !checked);
-  const elapsed = timerStartedAt ? Math.floor((now - timerStartedAt) / 1000) : 0;
-  const remaining = Math.max(SENTENCE_SECONDS - elapsed, 0);
-
-  // 타이머 만료 시 오답 자동 기록 (화면 전환 없음)
-  useEffect(() => {
-    if (timerStartedAt && remaining === 0 && !checked && !timerExpired) {
-      setTimerExpired(true);
-      record(idx, false); // 오답 기록
-    }
-  }, [remaining, checked, timerStartedAt, timerExpired]);
 
   const row = idx === null ? null : data[idx];
   const words = useMemo(() => splitWords(row?.words), [row]);
   const answer = row?.answer?.trim() ?? "";
   const userAnswer = picked.map((item) => item.word).join(" ");
-
-  // 이미 선택된 sourceIndex 집합
-  const usedIndices = useMemo(() => new Set(picked.map((item) => item.sourceIndex)), [picked]);
+  const isCorrect = normalizeAnswer(userAnswer) === normalizeAnswer(answer);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -98,50 +81,33 @@ function BuildASentence() {
   }
 
   function addWord(word, sourceIndex) {
-    if (checked || usedIndices.has(sourceIndex)) return;
-    setPicked((cur) => [...cur, { word, sourceIndex, id: `${sourceIndex}-${cur.length}` }]);
+    if (checked) return;
+    setPicked((current) => [...current, { word, sourceIndex, id: `${sourceIndex}-${current.length}` }]);
   }
 
   function removeWord(id) {
     if (checked) return;
-    setPicked((cur) => cur.filter((item) => item.id !== id));
+    setPicked((current) => current.filter((item) => item.id !== id));
   }
 
   function resetQuestion(nextIdx = idx) {
     setIdx(nextIdx);
     setPicked([]);
     setChecked(false);
-    setTimerStartedAt(Date.now());
-    setTimerExpired(false);
   }
 
   async function handleCheck() {
-    // 타이머 만료 시 이미 record 됐으므로 중복 방지
-    if (!timerExpired) {
-      const isCorrect = normalizeAnswer(userAnswer) === normalizeAnswer(answer);
-      await record(idx, isCorrect);
-    }
+    await record(idx, isCorrect);
     setChecked(true);
   }
-
-  const isCorrect = !timerExpired && normalizeAnswer(userAnswer) === normalizeAnswer(answer);
-  const timerColor = remaining <= 10 ? "var(--red)" : remaining <= 20 ? "#e65100" : "var(--blue)";
 
   return (
     <div className="question-card writing-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
         instruction={info.instruction}
-        meta={<span style={{ color: timerColor, fontWeight: 800 }}>{formatTime(remaining)}</span>}
         onBack={() => setIdx(null)}
       />
-
-      {timerExpired && !checked && (
-        <div className="feedback-box incorrect" style={{ marginBottom: 12 }}>
-          시간이 초과되었습니다. 제출하면 오답 처리됩니다.
-        </div>
-      )}
-
       {row.prompt && <TextBlock className="task-note" text={row.prompt} />}
 
       <div className={`sentence-builder ${checked ? (isCorrect ? "correct" : "incorrect") : ""}`}>
@@ -157,24 +123,21 @@ function BuildASentence() {
       </div>
 
       <div className="word-bank">
-        {words.map((word, sourceIndex) => {
-          const used = usedIndices.has(sourceIndex);
-          return (
-            <button
-              key={`${word}-${sourceIndex}`}
-              className={`word-chip${used ? " word-chip-used" : ""}`}
-              onClick={() => addWord(word, sourceIndex)}
-              disabled={checked || used}
-            >
-              {word}
-            </button>
-          );
-        })}
+        {words.map((word, sourceIndex) => (
+          <button
+            key={`${word}-${sourceIndex}`}
+            className="word-chip"
+            onClick={() => addWord(word, sourceIndex)}
+            disabled={checked}
+          >
+            {word}
+          </button>
+        ))}
       </div>
 
       {checked && (
-        <div className={`feedback-box ${isCorrect ? "correct" : "incorrect"}`} style={{ marginTop: 16 }}>
-          <strong>{isCorrect ? "Correct!" : "Model answer"}</strong>
+        <div className={isCorrect ? "feedback-box correct" : "feedback-box incorrect"}>
+          <strong>{isCorrect ? "Correct" : "Model answer"}</strong>
           <p>{answer}</p>
         </div>
       )}
@@ -270,7 +233,7 @@ function EmailTask({ data, loading, error }) {
           {row.instruction && (
             <div style={{ fontSize: 14, color: "var(--gray-600)", lineHeight: 1.6, marginTop: 10 }}>
               {row.instruction.split(/\n/).map((line, i) => (
-                <p key={i} style={{ margin: 0, marginTop: i > 0 ? 4 : 0 }}>{line || "\u00a0"}</p>
+                <p key={i} style={{ margin: 0, marginTop: i === 0 ? 0 : 4 }}>{line || "\u00a0"}</p>
               ))}
             </div>
           )}
@@ -292,8 +255,8 @@ function EmailTask({ data, loading, error }) {
 
       {showSample && row.sample && (
         <div className="sample-answer">
-          <strong>Sample response</strong>
-          <TextBlock text={row.sample} />
+          <strong style={{ display: "block", marginBottom: 12 }}>Sample response</strong>
+          <TextBlock text={row.sample} isSample />
         </div>
       )}
 
@@ -363,7 +326,7 @@ function DiscussionTask({ data, loading, error }) {
           {row.instruction && (
             <div style={{ fontSize: 14, color: "var(--gray-600)", lineHeight: 1.6, marginBottom: 12 }}>
               {row.instruction.split(/\n/).map((line, i) => (
-                <p key={i} style={{ margin: 0, marginTop: i > 0 ? 4 : 0 }}>{line || "\u00a0"}</p>
+                <p key={i} style={{ margin: 0, marginTop: i === 0 ? 0 : 4 }}>{line || "\u00a0"}</p>
               ))}
             </div>
           )}
@@ -385,8 +348,8 @@ function DiscussionTask({ data, loading, error }) {
 
           {showSample && row.sample && (
             <div className="sample-answer" style={{ marginTop: 16 }}>
-              <strong>Sample response</strong>
-              <TextBlock text={row.sample} />
+              <strong style={{ display: "block", marginBottom: 12 }}>Sample response</strong>
+              <TextBlock text={row.sample} isSample />
             </div>
           )}
         </section>
@@ -425,25 +388,26 @@ function SectionHome({ info, items, results, onSelect, renderDots }) {
 }
 
 function WordCountDots({ attempts = [], targetWords }) {
-  // attempts[0] 이 가장 최근 단어수 (1개만 표시)
-  const wc = Array.isArray(attempts) && attempts.length > 0 ? attempts[0] : null;
-  if (wc === null) {
+  if (!attempts || attempts.length === 0) {
     return (
       <span className="result-dots">
-        <span className="result-dot" />
+        {Array.from({ length: 3 }, (_, i) => <span key={i} className="result-dot" />)}
       </span>
     );
   }
+  const recent = Array.isArray(attempts) ? attempts.slice(0, 3) : [];
   return (
-    <span style={{ display: "inline-flex", alignItems: "center" }}>
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-        background: wc >= targetWords ? "var(--green-light)" : "var(--gray-100)",
-        color: wc >= targetWords ? "var(--green)" : "var(--gray-600)",
-        border: `1px solid ${wc >= targetWords ? "#c8e6c9" : "var(--gray-200)"}`,
-      }}>
-        {wc}단어
-      </span>
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+      {recent.map((wc, i) => (
+        <span key={i} style={{
+          fontSize: 11, fontWeight: 700, padding: "2px 6px", borderRadius: 999,
+          background: wc >= targetWords ? "var(--green-light)" : "var(--gray-100)",
+          color: wc >= targetWords ? "var(--green)" : "var(--gray-600)",
+          border: `1px solid ${wc >= targetWords ? "#c8e6c9" : "var(--gray-200)"}`,
+        }}>
+          {wc}
+        </span>
+      ))}
     </span>
   );
 }
@@ -499,11 +463,25 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext, checkLa
   );
 }
 
-function TextBlock({ className, text }) {
+// **텍스트** → <strong> 파싱
+function parseBold(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
+function TextBlock({ className, text, isSample = false }) {
+  const pStyle = isSample ? { margin: 0, marginTop: 2, lineHeight: 1.6 } : {};
   return (
     <div className={className}>
       {text.split(/\n/).map((line, i) => (
-        <p key={i}>{line || "\u00a0"}</p>
+        <p key={i} style={isSample ? { ...pStyle, marginTop: i === 0 ? 0 : 2 } : {}}>
+          {parseBold(line || "\u00a0")}
+        </p>
       ))}
     </div>
   );
