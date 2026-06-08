@@ -534,6 +534,12 @@ body {
   font-weight: 800;
 }
 
+.letter-input.incorrect {
+  border-color: #ef9a9a;
+  background: var(--red-light);
+  color: var(--red);
+}
+
 .prompt-panel,
 .interview-topic {
   margin-bottom: 18px;

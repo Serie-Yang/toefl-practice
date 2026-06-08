@@ -154,8 +154,9 @@ function CompleteTheWords() {
                 />
               ))}
               {checked && (
-                <span className="inline-answer">{isCorrect ? "✓" : answer}</span>
-              )}
+                <span className={`inline-answer ${isCorrect ? "" : "incorrect-answer"}`}>
+                  {isCorrect ? "✓" : answer}
+                </span>              )}
             </span>
           );
         })}
