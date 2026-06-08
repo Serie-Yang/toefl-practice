@@ -58,13 +58,30 @@ function BuildASentence() {
   const [idx, setIdx] = useState(null);
   const [picked, setPicked] = useState([]);
   const [checked, setChecked] = useState(false);
+  const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const [timerExpired, setTimerExpired] = useState(false);
   const info = WRITING_INFO.sentence;
+  const SENTENCE_SECONDS = 45;
+
+  const now = useCurrentTime(timerStartedAt !== null && !checked);
+  const elapsed = timerStartedAt ? Math.floor((now - timerStartedAt) / 1000) : 0;
+  const remaining = Math.max(SENTENCE_SECONDS - elapsed, 0);
+
+  // 타이머 만료 시 오답 자동 기록 (화면 전환 없음)
+  useEffect(() => {
+    if (timerStartedAt && remaining === 0 && !checked && !timerExpired) {
+      setTimerExpired(true);
+      record(idx, false); // 오답 기록
+    }
+  }, [remaining, checked, timerStartedAt, timerExpired]);
 
   const row = idx === null ? null : data[idx];
   const words = useMemo(() => splitWords(row?.words), [row]);
   const answer = row?.answer?.trim() ?? "";
   const userAnswer = picked.map((item) => item.word).join(" ");
-  const isCorrect = normalizeAnswer(userAnswer) === normalizeAnswer(answer);
+
+  // 이미 선택된 sourceIndex 집합
+  const usedIndices = useMemo(() => new Set(picked.map((item) => item.sourceIndex)), [picked]);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -81,33 +98,50 @@ function BuildASentence() {
   }
 
   function addWord(word, sourceIndex) {
-    if (checked) return;
-    setPicked((current) => [...current, { word, sourceIndex, id: `${sourceIndex}-${current.length}` }]);
+    if (checked || usedIndices.has(sourceIndex)) return;
+    setPicked((cur) => [...cur, { word, sourceIndex, id: `${sourceIndex}-${cur.length}` }]);
   }
 
   function removeWord(id) {
     if (checked) return;
-    setPicked((current) => current.filter((item) => item.id !== id));
+    setPicked((cur) => cur.filter((item) => item.id !== id));
   }
 
   function resetQuestion(nextIdx = idx) {
     setIdx(nextIdx);
     setPicked([]);
     setChecked(false);
+    setTimerStartedAt(Date.now());
+    setTimerExpired(false);
   }
 
   async function handleCheck() {
-    await record(idx, isCorrect);
+    // 타이머 만료 시 이미 record 됐으므로 중복 방지
+    if (!timerExpired) {
+      const isCorrect = normalizeAnswer(userAnswer) === normalizeAnswer(answer);
+      await record(idx, isCorrect);
+    }
     setChecked(true);
   }
+
+  const isCorrect = !timerExpired && normalizeAnswer(userAnswer) === normalizeAnswer(answer);
+  const timerColor = remaining <= 10 ? "var(--red)" : remaining <= 20 ? "#e65100" : "var(--blue)";
 
   return (
     <div className="question-card writing-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
         instruction={info.instruction}
+        meta={<span style={{ color: timerColor, fontWeight: 800 }}>{formatTime(remaining)}</span>}
         onBack={() => setIdx(null)}
       />
+
+      {timerExpired && !checked && (
+        <div className="feedback-box incorrect" style={{ marginBottom: 12 }}>
+          시간이 초과되었습니다. 제출하면 오답 처리됩니다.
+        </div>
+      )}
+
       {row.prompt && <TextBlock className="task-note" text={row.prompt} />}
 
       <div className={`sentence-builder ${checked ? (isCorrect ? "correct" : "incorrect") : ""}`}>
@@ -123,21 +157,24 @@ function BuildASentence() {
       </div>
 
       <div className="word-bank">
-        {words.map((word, sourceIndex) => (
-          <button
-            key={`${word}-${sourceIndex}`}
-            className="word-chip"
-            onClick={() => addWord(word, sourceIndex)}
-            disabled={checked}
-          >
-            {word}
-          </button>
-        ))}
+        {words.map((word, sourceIndex) => {
+          const used = usedIndices.has(sourceIndex);
+          return (
+            <button
+              key={`${word}-${sourceIndex}`}
+              className={`word-chip${used ? " word-chip-used" : ""}`}
+              onClick={() => addWord(word, sourceIndex)}
+              disabled={checked || used}
+            >
+              {word}
+            </button>
+          );
+        })}
       </div>
 
       {checked && (
-        <div className={isCorrect ? "feedback-box correct" : "feedback-box incorrect"}>
-          <strong>{isCorrect ? "Correct" : "Model answer"}</strong>
+        <div className={`feedback-box ${isCorrect ? "correct" : "incorrect"}`} style={{ marginTop: 16 }}>
+          <strong>{isCorrect ? "Correct!" : "Model answer"}</strong>
           <p>{answer}</p>
         </div>
       )}
@@ -158,13 +195,10 @@ function BuildASentence() {
 function WriteAnEmail() {
   const { data, loading, error } = useSheetData("email");
   return (
-    <LongWritingTask
-      sectionId="email"
+    <EmailTask
       data={data}
       loading={loading}
       error={error}
-      minWords={80}
-      textareaLabel="Email response"
     />
   );
 }
@@ -172,38 +206,33 @@ function WriteAnEmail() {
 function AcademicDiscussion() {
   const { data, loading, error } = useSheetData("discussion");
   return (
-    <LongWritingTask
-      sectionId="discussion"
+    <DiscussionTask
       data={data}
       loading={loading}
       error={error}
-      minWords={100}
-      textareaLabel="Discussion post"
-      showDiscussion
     />
   );
 }
 
-function LongWritingTask({ sectionId, data, loading, error, minWords, textareaLabel, showDiscussion = false }) {
-  const { results, record } = useSectionProgress(`writing_${sectionId}`);
+// ── EMAIL: 2단 레이아웃, sample은 전체 너비 아래 ──────────────
+function EmailTask({ data, loading, error }) {
+  const { results, recordWords, getLastDraft } = useSectionProgress("writing_email");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
-  const info = WRITING_INFO[sectionId];
-  const timerSeconds = sectionId === "email" ? 7 * 60 : 10 * 60;
-  const remainingSeconds = useAutoCountdown(timerStartedAt, timerSeconds);
+  const info = WRITING_INFO.email;
+  const minWords = 80;
+  const remainingSeconds = useAutoCountdown(timerStartedAt, 7 * 60);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
   if (!data.length) return <EmptyCard />;
   if (idx === null) {
     return (
-      <SectionHome
-        info={info}
-        items={data}
-        results={results}
-        onSelect={(i) => resetQuestion(i)}
+      <SectionHome info={info} items={data} results={results}
+        renderDots={(attempts) => <WordCountDots attempts={attempts} targetWords={130} />}
+        onSelect={(i) => openQuestion(i)}
       />
     );
   }
@@ -211,48 +240,50 @@ function LongWritingTask({ sectionId, data, loading, error, minWords, textareaLa
   const row = data[idx];
   const words = countWords(response);
 
-  function resetQuestion(nextIdx = idx) {
+  function openQuestion(nextIdx) {
+    const draft = getLastDraft ? getLastDraft(nextIdx) : "";
     setIdx(nextIdx);
+    setResponse(draft);
+    setShowSample(false);
+    setTimerStartedAt(draft ? null : Date.now());
+  }
+
+  function handleReset() {
     setResponse("");
     setShowSample(false);
     setTimerStartedAt(Date.now());
   }
 
   async function handleShowSample() {
-    await record(idx, true);
+    if (recordWords) await recordWords(idx, countWords(response), response);
     setShowSample(true);
   }
 
   return (
     <div className="question-card writing-card">
-      <QuestionHeader
-        badge={getQuestionBadge(idx)}
-        instruction={info.instruction}
-        meta={formatTime(remainingSeconds)}
-        onBack={() => setIdx(null)}
-      />
+      <QuestionHeader badge={getQuestionBadge(idx)} instruction={info.instruction}
+        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)} />
 
       <div className="task-layout">
         <section className="task-material">
           {row.topic && <TextBlock className="prompt-text-block" text={row.topic} />}
-          {row.instruction && <TextBlock className="instruction-box" text={row.instruction} />}
-          {showDiscussion && row.discussion && (
-            <TextBlock className="discussion-box" text={row.discussion} />
+          {row.instruction && (
+            <div style={{ fontSize: 14, color: "var(--gray-600)", lineHeight: 1.6, marginTop: 10 }}>
+              {row.instruction.split(/\n/).map((line, i) => (
+                <p key={i} style={{ margin: 0, marginTop: i > 0 ? 4 : 0 }}>{line || "\u00a0"}</p>
+              ))}
+            </div>
           )}
         </section>
 
         <section className="response-panel">
           <div className="response-header">
-            <label htmlFor="writing-response">{textareaLabel}</label>
+            <label htmlFor="email-response">Email response</label>
             <span>{words} words</span>
           </div>
-          <textarea
-            id="writing-response"
-            className="writing-textarea"
-            value={response}
+          <textarea id="email-response" className="writing-textarea" value={response}
             onChange={(e) => setResponse(e.target.value)}
-            placeholder={`Write at least ${minWords} words.`}
-          />
+            placeholder={`Write at least ${minWords} words.`} />
           <div className={words >= minWords ? "word-status ready" : "word-status"}>
             {words >= minWords ? "Word target reached" : `${Math.max(minWords - words, 0)} words to target`}
           </div>
@@ -266,20 +297,113 @@ function LongWritingTask({ sectionId, data, loading, error, minWords, textareaLa
         </div>
       )}
 
-      <QuestionActions
-        idx={idx}
-        total={data.length}
-        checked={showSample}
-        onPrev={() => resetQuestion(Math.max(idx - 1, 0))}
+      <QuestionActions idx={idx} total={data.length} checked={showSample}
+        onPrev={() => openQuestion(Math.max(idx - 1, 0))}
         onCheck={handleShowSample}
-        onNext={() => resetQuestion(Math.min(idx + 1, data.length - 1))}
+        onNext={() => openQuestion(Math.min(idx + 1, data.length - 1))}
         checkLabel="Show sample"
+        extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
       />
     </div>
   );
 }
 
-function SectionHome({ info, items, results, onSelect }) {
+// ── DISCUSSION: instruction 일반텍스트, professor+discussion 박스, sample은 response 아래 ──
+function DiscussionTask({ data, loading, error }) {
+  const { results, recordWords, getLastDraft } = useSectionProgress("writing_discussion");
+  const [idx, setIdx] = useState(null);
+  const [response, setResponse] = useState("");
+  const [showSample, setShowSample] = useState(false);
+  const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const info = WRITING_INFO.discussion;
+  const minWords = 100;
+  const remainingSeconds = useAutoCountdown(timerStartedAt, 10 * 60);
+
+  if (loading) return <LoadingCard />;
+  if (error) return <ErrorCard message={error} />;
+  if (!data.length) return <EmptyCard />;
+  if (idx === null) {
+    return (
+      <SectionHome info={info} items={data} results={results}
+        renderDots={(attempts) => <WordCountDots attempts={attempts} targetWords={120} />}
+        onSelect={(i) => openQuestion(i)}
+      />
+    );
+  }
+
+  const row = data[idx];
+  const words = countWords(response);
+
+  function openQuestion(nextIdx) {
+    const draft = getLastDraft ? getLastDraft(nextIdx) : "";
+    setIdx(nextIdx);
+    setResponse(draft);
+    setShowSample(false);
+    setTimerStartedAt(draft ? null : Date.now());
+  }
+
+  function handleReset() {
+    setResponse("");
+    setShowSample(false);
+    setTimerStartedAt(Date.now());
+  }
+
+  async function handleShowSample() {
+    if (recordWords) await recordWords(idx, countWords(response), response);
+    setShowSample(true);
+  }
+
+  return (
+    <div className="question-card writing-card">
+      <QuestionHeader badge={getQuestionBadge(idx)} instruction={info.instruction}
+        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)} />
+
+      <div className="task-layout">
+        <section className="task-material">
+          {row.instruction && (
+            <div style={{ fontSize: 14, color: "var(--gray-600)", lineHeight: 1.6, marginBottom: 12 }}>
+              {row.instruction.split(/\n/).map((line, i) => (
+                <p key={i} style={{ margin: 0, marginTop: i > 0 ? 4 : 0 }}>{line || "\u00a0"}</p>
+              ))}
+            </div>
+          )}
+          {row.professor && <TextBlock className="instruction-box" text={row.professor} />}
+          {row.discussion && <TextBlock className="discussion-box" text={row.discussion} />}
+        </section>
+
+        <section className="response-panel">
+          <div className="response-header">
+            <label htmlFor="discussion-response">Discussion post</label>
+            <span>{words} words</span>
+          </div>
+          <textarea id="discussion-response" className="writing-textarea" value={response}
+            onChange={(e) => setResponse(e.target.value)}
+            placeholder={`Write at least ${minWords} words.`} />
+          <div className={words >= minWords ? "word-status ready" : "word-status"}>
+            {words >= minWords ? "Word target reached" : `${Math.max(minWords - words, 0)} words to target`}
+          </div>
+
+          {showSample && row.sample && (
+            <div className="sample-answer" style={{ marginTop: 16 }}>
+              <strong>Sample response</strong>
+              <TextBlock text={row.sample} />
+            </div>
+          )}
+        </section>
+      </div>
+
+      <QuestionActions idx={idx} total={data.length} checked={showSample}
+        onPrev={() => openQuestion(Math.max(idx - 1, 0))}
+        onCheck={handleShowSample}
+        onNext={() => openQuestion(Math.min(idx + 1, data.length - 1))}
+        checkLabel="Show sample"
+        extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
+      />
+    </div>
+  );
+}
+
+function SectionHome({ info, items, results, onSelect, renderDots }) {
   return (
     <div className="section-home">
       <div className="section-intro">
@@ -292,11 +416,35 @@ function SectionHome({ info, items, results, onSelect }) {
           <button key={row.id || itemIdx} className="problem-list-item" onClick={() => onSelect(itemIdx)}>
             <span className="problem-index">{itemIdx + 1}</span>
             <span className="problem-copy">{getProblemLabel(row, itemIdx)}</span>
-            <ResultDots attempts={results[itemIdx]} />
+            {renderDots ? renderDots(results[itemIdx]) : <ResultDots attempts={results[itemIdx]} />}
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+function WordCountDots({ attempts = [], targetWords }) {
+  // attempts[0] 이 가장 최근 단어수 (1개만 표시)
+  const wc = Array.isArray(attempts) && attempts.length > 0 ? attempts[0] : null;
+  if (wc === null) {
+    return (
+      <span className="result-dots">
+        <span className="result-dot" />
+      </span>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center" }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+        background: wc >= targetWords ? "var(--green-light)" : "var(--gray-100)",
+        color: wc >= targetWords ? "var(--green)" : "var(--gray-600)",
+        border: `1px solid ${wc >= targetWords ? "#c8e6c9" : "var(--gray-200)"}`,
+      }}>
+        {wc}단어
+      </span>
+    </span>
   );
 }
 

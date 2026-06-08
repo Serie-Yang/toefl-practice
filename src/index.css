@@ -502,50 +502,12 @@ body {
   font-weight: 800;
 }
 
-.letter-blank-wrap {
+.inline-input-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  margin: 0 2px;
+  gap: 6px;
+  margin: 0 4px;
   vertical-align: middle;
-}
-
-.letter-input {
-  width: 17px;
-  height: 25px;
-  border: none;
-  border-bottom: 2px solid var(--blue-mid);
-  border-radius: 0;
-  background: transparent;
-  text-align: center;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--blue);
-  outline: none;
-  padding: 0;
-  transition: border-color 0.15s;
-  caret-color: var(--blue);
-}
-
-.letter-input:focus {
-  border-bottom-color: var(--blue);
-  background: var(--blue-light);
-  border-radius: 3px 3px 0 0;
-}
-
-.letter-input:disabled {
-  color: var(--gray-600);
-}
-
-.letter-input.correct {
-  border-bottom-color: var(--green);
-  color: var(--green);
-}
-
-.letter-input.incorrect {
-  border-bottom-color: var(--red);
-  color: var(--red);
 }
 
 .inline-input {
@@ -623,6 +585,18 @@ body {
 .word-chip:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.word-chip-used {
+  opacity: 0.35;
+  cursor: default;
+  background: var(--gray-100);
+  color: var(--gray-400);
+  border-color: var(--gray-200);
+}
+
+.word-bank {
+  margin-top: 16px;
 }
 
 .instruction-box,

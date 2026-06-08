@@ -161,7 +161,7 @@ function CompleteTheWords() {
 
 function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   const { data, loading, error } = useSheetData(sheetKey);
-  const { results, record } = useSectionProgress(`reading_${sectionId}`);
+  const { results, recordMc } = useSectionProgress(`reading_${sectionId}`);
   const [idx, setIdx] = useState(null);
   const [selected, setSelected] = useState({});
   const [checked, setChecked] = useState(false);
@@ -192,8 +192,9 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   }
 
   async function handleCheck() {
-    const allCorrect = questions.every((q) => selected[q.n] === q.answer);
-    await record(idx, allCorrect);
+    const correctMap = {};
+    questions.forEach((q) => { correctMap[q.n] = selected[q.n] === q.answer; });
+    await recordMc(idx, correctMap);
     setChecked(true);
   }
 

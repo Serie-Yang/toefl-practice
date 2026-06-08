@@ -3,7 +3,6 @@ import { useAuth } from "./context/AuthContext";
 import { db } from "./firebase";
 import { doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 
-// ── Firestore 경로 헬퍼 ──────────────────────────────────────
 // users/{uid}/progress/{sectionKey}
 
 const PROGRESS_SECTIONS = [
@@ -22,7 +21,7 @@ function sectionRef(uid, sectionKey) {
 
 async function readSection(uid, sectionKey) {
   const snap = await getDoc(sectionRef(uid, sectionKey));
-  return snap.exists() ? snap.data() : { attempts: [], byProblem: {} };
+  return snap.exists() ? snap.data() : { attempts: [], byProblem: {}, wordCounts: [] };
 }
 
 async function getSectionResults(uid, sectionKey) {
@@ -30,119 +29,174 @@ async function getSectionResults(uid, sectionKey) {
   return data.byProblem ?? {};
 }
 
+// 단일 정오 기록 (Complete the Words, Build a Sentence, Speaking)
 async function recordSectionAttempt(uid, sectionKey, problemIndex, correct) {
   const section = await readSection(uid, sectionKey);
   const result = Boolean(correct);
   const attempt = { correct: result, problemIndex, timestamp: Date.now() };
-
   const nextSection = {
-    attempts: [attempt, ...(section.attempts ?? [])].slice(0, 200),
+    ...section,
+    attempts: [attempt, ...(section.attempts ?? [])].slice(0, 500),
     byProblem: {
       ...(section.byProblem ?? {}),
-      [problemIndex]: [
-        result,
-        ...((section.byProblem ?? {})[problemIndex] ?? []),
-      ].slice(0, 3),
+      [problemIndex]: [result, ...((section.byProblem ?? {})[problemIndex] ?? [])].slice(0, 3),
     },
   };
-
   await setDoc(sectionRef(uid, sectionKey), nextSection);
   return nextSection.byProblem;
 }
 
-async function getRecentAccuracy(uid, sectionKey, limit = 20) {
+// MC 개별 문제 기록 (Read in Daily Life: 3문제, Read Academic: 5문제)
+// correctMap: { 1: true, 2: false, 3: true }
+async function recordMcAttempts(uid, sectionKey, problemIndex, correctMap) {
+  const section = await readSection(uid, sectionKey);
+  const now = Date.now();
+  const newAttempts = Object.entries(correctMap).map(([qNum, correct]) => ({
+    correct: Boolean(correct), problemIndex, qNum: Number(qNum), timestamp: now,
+  }));
+  const prevByProblem = section.byProblem ?? {};
+  const newResults = Object.values(correctMap).map(Boolean);
+  const nextSection = {
+    ...section,
+    attempts: [...newAttempts, ...(section.attempts ?? [])].slice(0, 500),
+    byProblem: {
+      ...prevByProblem,
+      [problemIndex]: [...newResults, ...(prevByProblem[problemIndex] ?? [])].slice(0, 15),
+    },
+  };
+  await setDoc(sectionRef(uid, sectionKey), nextSection);
+  return nextSection.byProblem;
+}
+
+// 글쓰기 단어수 + 이전 작성 내용 기록 (Write an Email, Academic Discussion)
+async function recordWritingEntry(uid, sectionKey, problemIndex, wordCount, text) {
+  const section = await readSection(uid, sectionKey);
+  const entry = { wordCount, text, problemIndex, timestamp: Date.now() };
+  const prevByProblem = section.byProblem ?? {};
+  const nextSection = {
+    ...section,
+    wordCounts: [entry, ...(section.wordCounts ?? [])].slice(0, 500),
+    byProblem: {
+      ...prevByProblem,
+      // byProblem에 최근 3개 단어수 저장 (목록에서 표시용)
+      [problemIndex]: [wordCount, ...(prevByProblem[problemIndex] ?? [])].slice(0, 3),
+    },
+    // 문제별 마지막 작성 내용 저장
+    lastDraft: {
+      ...(section.lastDraft ?? {}),
+      [problemIndex]: text,
+    },
+  };
+  await setDoc(sectionRef(uid, sectionKey), nextSection);
+  return nextSection;
+}
+
+async function getAccuracy(uid, sectionKey) {
   const data = await readSection(uid, sectionKey);
-  const recent = (data.attempts ?? []).slice(0, limit);
-  const correct = recent.filter((a) => a.correct).length;
+  const attempts = data.attempts ?? [];
+  const correct = attempts.filter((a) => a.correct).length;
   return {
-    attempted: recent.length,
-    correct,
-    percent: recent.length ? Math.round((correct / recent.length) * 100) : null,
+    attempted: attempts.length, correct,
+    percent: attempts.length ? Math.round((correct / attempts.length) * 100) : null,
   };
 }
 
-async function getGroupRecentAccuracy(uid, group, limit = 20) {
-  const keys = PROGRESS_SECTIONS.filter((s) => s.group === group).map((s) => s.key);
+async function getAvgWordCount(uid, sectionKey) {
+  const data = await readSection(uid, sectionKey);
+  const wordCounts = data.wordCounts ?? [];
+  if (!wordCounts.length) return { attempted: 0, avg: null };
+  const avg = Math.round(wordCounts.reduce((sum, e) => sum + e.wordCount, 0) / wordCounts.length);
+  return { attempted: wordCounts.length, avg };
+}
 
-  const allAttempts = (await Promise.all(keys.map((key) => readSection(uid, key))))
-    .flatMap((data) => data.attempts ?? [])
-    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0))
-    .slice(0, limit);
-
-  const correct = allAttempts.filter((a) => a.correct).length;
-  return {
-    attempted: allAttempts.length,
-    correct,
-    percent: allAttempts.length ? Math.round((correct / allAttempts.length) * 100) : null,
-  };
+async function getInterviewCount(uid, sectionKey) {
+  const data = await readSection(uid, sectionKey);
+  return Object.keys(data.byProblem ?? {}).length;
 }
 
 async function clearProgress(uid) {
-  await Promise.all(
-    PROGRESS_SECTIONS.map((s) => deleteDoc(sectionRef(uid, s.key)))
-  );
+  await Promise.all(PROGRESS_SECTIONS.map((s) => deleteDoc(sectionRef(uid, s.key))));
 }
 
 // ── React 훅 ────────────────────────────────────────────────
 
-/**
- * 섹션 결과 로드 + 기록 훅
- * Reading / Writing / Speaking 컴포넌트에서 사용
- */
 export function useSectionProgress(sectionKey) {
   const { user } = useAuth();
   const uid = user?.uid;
-
   const [results, setResults] = useState({});
+  const [sectionData, setSectionData] = useState({});
 
   useEffect(() => {
     if (!uid) return;
-    getSectionResults(uid, sectionKey).then(setResults);
+    readSection(uid, sectionKey).then((data) => {
+      setResults(data.byProblem ?? {});
+      setSectionData(data);
+    });
   }, [uid, sectionKey]);
 
-  const record = useCallback(
-    async (problemIndex, correct) => {
-      if (!uid) return {};
-      const updated = await recordSectionAttempt(uid, sectionKey, problemIndex, correct);
-      setResults(updated);
-      return updated;
-    },
-    [uid, sectionKey]
-  );
+  // 단일 정오 기록
+  const record = useCallback(async (problemIndex, correct) => {
+    if (!uid) return {};
+    const updated = await recordSectionAttempt(uid, sectionKey, problemIndex, correct);
+    setResults(updated);
+    return updated;
+  }, [uid, sectionKey]);
 
-  return { results, record };
+  // MC 개별 기록
+  const recordMc = useCallback(async (problemIndex, correctMap) => {
+    if (!uid) return {};
+    const updated = await recordMcAttempts(uid, sectionKey, problemIndex, correctMap);
+    setResults(updated);
+    return updated;
+  }, [uid, sectionKey]);
+
+  // 글쓰기 단어수 + 내용 기록
+  const recordWords = useCallback(async (problemIndex, wordCount, text = "") => {
+    if (!uid) return {};
+    const updated = await recordWritingEntry(uid, sectionKey, problemIndex, wordCount, text);
+    setResults(updated.byProblem ?? {});
+    setSectionData(updated);
+    return updated;
+  }, [uid, sectionKey]);
+
+  // 문제별 마지막 작성 내용
+  const getLastDraft = useCallback((problemIndex) => {
+    return sectionData.lastDraft?.[problemIndex] ?? "";
+  }, [sectionData]);
+
+  return { results, record, recordMc, recordWords, getLastDraft };
 }
 
-/**
- * MyMenu용: 전체 섹션 정확도 로드
- */
 export function useAllProgress() {
   const { user } = useAuth();
   const uid = user?.uid;
-
-  const [data, setData] = useState(null); // null = 로딩 중
+  const [data, setData] = useState(null);
 
   const load = useCallback(async () => {
     if (!uid) return;
-    const groups = ["Reading", "Writing", "Speaking"];
+    const [completeAcc, dailyAcc, academicAcc, sentenceAcc, emailWc, discussionWc, interviewCount] =
+      await Promise.all([
+        getAccuracy(uid, "reading_complete"),
+        getAccuracy(uid, "reading_daily"),
+        getAccuracy(uid, "reading_academic"),
+        getAccuracy(uid, "writing_sentence"),
+        getAvgWordCount(uid, "writing_email"),
+        getAvgWordCount(uid, "writing_discussion"),
+        getInterviewCount(uid, "speaking_interview"),
+      ]);
 
-    const [groupAccuracies, sectionAccuracies] = await Promise.all([
-      Promise.all(groups.map((g) => getGroupRecentAccuracy(uid, g))),
-      Promise.all(PROGRESS_SECTIONS.map((s) => getRecentAccuracy(uid, s.key))),
-    ]);
+    const readingAttempted = completeAcc.attempted + dailyAcc.attempted + academicAcc.attempted;
+    const readingCorrect = completeAcc.correct + dailyAcc.correct + academicAcc.correct;
+    const readingSummary = {
+      attempted: readingAttempted, correct: readingCorrect,
+      percent: readingAttempted ? Math.round((readingCorrect / readingAttempted) * 100) : null,
+    };
 
-    const result = groups.map((group, gi) => ({
-      title: group,
-      summary: groupAccuracies[gi],
-      subsections: PROGRESS_SECTIONS
-        .filter((s) => s.group === group)
-        .map((s) => ({
-          ...s,
-          accuracy: sectionAccuracies[PROGRESS_SECTIONS.indexOf(s)],
-        })),
-    }));
-
-    setData(result);
+    setData({
+      reading: { summary: readingSummary, complete: completeAcc, daily: dailyAcc, academic: academicAcc },
+      writing: { sentence: sentenceAcc, email: emailWc, discussion: discussionWc },
+      speaking: { interviewCount },
+    });
   }, [uid]);
 
   useEffect(() => { load(); }, [load]);
