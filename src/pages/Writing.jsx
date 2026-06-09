@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import emailjs from "@emailjs/browser";
 import { useSheetData } from "../hooks/useSheetData";
 import { useSectionProgress } from "../useProgress";
+import { useAuth } from "../context/AuthContext";
 
 const SECTIONS = [
   { id: "sentence", label: "Build a Sentence" },
@@ -77,6 +79,8 @@ function BuildASentence() {
   const [checked, setChecked] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
   const [timerExpired, setTimerExpired] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const info = WRITING_INFO.sentence;
   const SENTENCE_SECONDS = 45;
 
@@ -84,7 +88,6 @@ function BuildASentence() {
   const elapsed = timerStartedAt ? Math.floor((now - timerStartedAt) / 1000) : 0;
   const remaining = Math.max(SENTENCE_SECONDS - elapsed, 0);
 
-  // 타이머 만료 시 자동 오답 기록 (화면 전환 없음)
   useEffect(() => {
     if (timerStartedAt && remaining === 0 && !checked && !timerExpired) {
       setTimerExpired(true);
@@ -98,7 +101,6 @@ function BuildASentence() {
   const userAnswer = picked.map((item) => item.word).join(" ");
   const isCorrect = !timerExpired && normalizeAnswer(userAnswer) === normalizeAnswer(answer);
 
-  // 이미 선택된 sourceIndex 집합
   const usedIndices = useMemo(() => new Set(picked.map((item) => item.sourceIndex)), [picked]);
 
   if (loading) return <LoadingCard />;
@@ -131,6 +133,7 @@ function BuildASentence() {
     setChecked(false);
     setTimerStartedAt(Date.now());
     setTimerExpired(false);
+    setShowReport(false);
   }
 
   async function handleCheck() {
@@ -147,6 +150,7 @@ function BuildASentence() {
         instruction={info.instruction}
         meta={<span style={{ color: timerColor, fontWeight: 800 }}>{formatTime(remaining)}</span>}
         onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)}
       />
 
       {timerExpired && !checked && (
@@ -201,39 +205,38 @@ function BuildASentence() {
         onNext={() => resetQuestion(Math.min(idx + 1, data.length - 1))}
         extraAction={<button className="btn-secondary" onClick={() => resetQuestion()}>Reset</button>}
       />
+
+      {showReport && (
+        <ReportModal
+          section="Writing - Build a Sentence"
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
 
 function WriteAnEmail() {
   const { data, loading, error } = useSheetData("email");
-  return (
-    <EmailTask
-      data={data}
-      loading={loading}
-      error={error}
-    />
-  );
+  return <EmailTask data={data} loading={loading} error={error} />;
 }
 
 function AcademicDiscussion() {
   const { data, loading, error } = useSheetData("discussion");
-  return (
-    <DiscussionTask
-      data={data}
-      loading={loading}
-      error={error}
-    />
-  );
+  return <DiscussionTask data={data} loading={loading} error={error} />;
 }
 
-// ── EMAIL: 2단 레이아웃, sample은 전체 너비 아래 ──────────────
 function EmailTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft } = useSectionProgress("writing_email");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const info = WRITING_INFO.email;
   const minWords = 100;
   const remainingSeconds = useAutoCountdown(timerStartedAt, 7 * 60);
@@ -259,6 +262,7 @@ function EmailTask({ data, loading, error }) {
     setResponse(draft);
     setShowSample(false);
     setTimerStartedAt(draft ? null : Date.now());
+    setShowReport(false);
   }
 
   function handleReset() {
@@ -275,7 +279,8 @@ function EmailTask({ data, loading, error }) {
   return (
     <div className="question-card writing-card">
       <QuestionHeader badge={getQuestionBadge(idx)} instruction={info.instruction}
-        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)} />
+        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)} />
 
       <div className="task-layout">
         <section className="task-material">
@@ -317,17 +322,28 @@ function EmailTask({ data, loading, error }) {
         checkLabel="Show sample"
         extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
       />
+
+      {showReport && (
+        <ReportModal
+          section="Writing - Write an Email"
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
 
-// ── DISCUSSION: instruction 일반텍스트, professor+discussion 박스, sample은 response 아래 ──
 function DiscussionTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft } = useSectionProgress("writing_discussion");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const info = WRITING_INFO.discussion;
   const minWords = 100;
   const remainingSeconds = useAutoCountdown(timerStartedAt, 10 * 60);
@@ -353,6 +369,7 @@ function DiscussionTask({ data, loading, error }) {
     setResponse(draft);
     setShowSample(false);
     setTimerStartedAt(draft ? null : Date.now());
+    setShowReport(false);
   }
 
   function handleReset() {
@@ -369,7 +386,8 @@ function DiscussionTask({ data, loading, error }) {
   return (
     <div className="question-card writing-card">
       <QuestionHeader badge={getQuestionBadge(idx)} instruction={info.instruction}
-        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)} />
+        meta={formatTime(remainingSeconds)} onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)} />
 
       <div className="task-layout">
         <section className="task-material">
@@ -412,6 +430,16 @@ function DiscussionTask({ data, loading, error }) {
         checkLabel="Show sample"
         extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
       />
+
+      {showReport && (
+        <ReportModal
+          section="Writing - Academic Discussion"
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
@@ -455,7 +483,6 @@ function WordCountDots({ attempts = [], targetWords }) {
       </span>
     );
   }
-  // slice(0, 3) → slice(0, 1) 로 변경, 가장 최근 1개만
   const recent = Array.isArray(attempts) ? attempts[0] : null;
   if (recent === null || recent === undefined) {
     return <span className="result-dots"><span className="result-dot" /></span>;
@@ -485,6 +512,72 @@ function ResultDots({ attempts = [] }) {
   );
 }
 
+function ReportModal({ section, problemNumber, problemLabel, userEmail, onClose }) {
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState("idle");
+
+  async function handleSubmit() {
+    if (!reason.trim()) return;
+    setStatus("sending");
+    try {
+      emailjs.init("yTTgUnSO_K7drzPam"); 
+      await emailjs.send("service_rqzbtkr", "template_lqa08fq", {
+        section,
+        problem_number: problemNumber,
+        problem_label: problemLabel,
+        user_email: userEmail || "비로그인 사용자",
+        reason: reason.trim(),
+        timestamp: new Date().toLocaleString("ko-KR"),
+      });
+      setStatus("done");
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>🚨 문제 신고</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-meta">{section} · {problemNumber}번 문제</div>
+
+        {status === "done" ? (
+          <div className="modal-success">
+            신고가 접수되었습니다. 빠르게 확인할게요!
+            <br />
+            <button className="btn-primary" style={{ marginTop: 16 }} onClick={onClose}>닫기</button>
+          </div>
+        ) : (
+          <>
+            <textarea
+              className="writing-textarea compact"
+              placeholder="오류 내용을 간단히 설명해주세요. (예: 정답이 틀렸어요, 지문에 오타가 있어요)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            {status === "error" && (
+              <div className="error-message" style={{ marginTop: 8 }}>전송에 실패했습니다. 다시 시도해주세요.</div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+              <button className="btn-secondary" onClick={onClose}>취소</button>
+              <button
+                className="btn-primary"
+                onClick={handleSubmit}
+                disabled={!reason.trim() || status === "sending"}
+              >
+                {status === "sending" ? "전송 중..." : "신고하기"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function splitWords(value = "") {
   return value.split("|").map((w) => w.trim()).filter(Boolean);
 }
@@ -497,7 +590,7 @@ function countWords(value = "") {
   return value.trim() ? value.trim().split(/\s+/).length : 0;
 }
 
-function QuestionHeader({ badge, instruction, meta, onBack }) {
+function QuestionHeader({ badge, instruction, meta, onBack, onReport }) {
   return (
     <div className="question-meta">
       <div>
@@ -506,6 +599,7 @@ function QuestionHeader({ badge, instruction, meta, onBack }) {
       </div>
       <div className="question-tools">
         {meta && <span className="q-count">{meta}</span>}
+        <button className="btn-secondary compact" onClick={onReport}>🚨 Report</button>
         <button className="btn-secondary compact" onClick={onBack}>List</button>
       </div>
     </div>
@@ -525,7 +619,6 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext, checkLa
   );
 }
 
-// **텍스트** → <strong> 파싱
 function parseBold(text) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   if (parts.length === 1) return text;

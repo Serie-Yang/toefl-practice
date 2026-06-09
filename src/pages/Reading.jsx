@@ -1,6 +1,8 @@
 import { useState } from "react";
+import emailjs from "@emailjs/browser";
 import { useSheetData } from "../hooks/useSheetData";
 import { useSectionProgress } from "../useProgress";
+import { useAuth } from "../context/AuthContext";
 
 const SECTIONS = [
   { id: "complete", label: "Complete the Words" },
@@ -76,6 +78,8 @@ function CompleteTheWords() {
   const [idx, setIdx] = useState(null);
   const [inputs, setInputs] = useState({});
   const [checked, setChecked] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const info = READING_INFO.complete;
 
   if (loading) return <LoadingCard />;
@@ -97,6 +101,7 @@ function CompleteTheWords() {
     setIdx(nextIdx);
     setInputs({});
     setChecked(false);
+    setShowReport(false);
   }
 
   async function handleCheck() {
@@ -113,6 +118,7 @@ function CompleteTheWords() {
         badge={getQuestionBadge(idx)}
         instruction="Fill in the missing letters in the paragraph."
         onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)}
       />
       <div className="passage-box cloze-passage">
         {tokens.map((token, tokenIdx) => {
@@ -156,7 +162,8 @@ function CompleteTheWords() {
               {checked && (
                 <span className={`inline-answer ${isCorrect ? "" : "incorrect-answer"}`}>
                   {isCorrect ? "✓" : answer}
-                </span>              )}
+                </span>
+              )}
             </span>
           );
         })}
@@ -170,6 +177,16 @@ function CompleteTheWords() {
         onCheck={handleCheck}
         onNext={() => resetQuestion(Math.min(idx + 1, data.length - 1))}
       />
+
+      {showReport && (
+        <ReportModal
+          section="Reading - Complete the Words"
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
@@ -180,7 +197,12 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   const [idx, setIdx] = useState(null);
   const [selected, setSelected] = useState({});
   const [checked, setChecked] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const info = READING_INFO[sectionId];
+
+  const sectionLabel =
+    sectionId === "daily" ? "Reading - Read in Daily Life" : "Reading - Read an Academic Passage";
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -204,6 +226,7 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
     setIdx(nextIdx);
     setSelected({});
     setChecked(false);
+    setShowReport(false);
   }
 
   async function handleCheck() {
@@ -219,6 +242,7 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
         badge={getQuestionBadge(idx)}
         instruction={info.instruction}
         onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)}
       />
 
       <div className="reading-layout">
@@ -265,6 +289,16 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
         onCheck={handleCheck}
         onNext={() => resetQuestion(Math.min(idx + 1, data.length - 1))}
       />
+
+      {showReport && (
+        <ReportModal
+          section={sectionLabel}
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
@@ -339,7 +373,7 @@ function normalizeAnswer(value = "") {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function QuestionHeader({ badge, instruction, onBack }) {
+function QuestionHeader({ badge, instruction, onBack, onReport }) {
   return (
     <div className="question-meta">
       <div>
@@ -347,6 +381,7 @@ function QuestionHeader({ badge, instruction, onBack }) {
         <h2 className="question-instruction">{instruction}</h2>
       </div>
       <div className="question-tools">
+        <button className="btn-secondary compact" onClick={onReport}>🚨 Report</button>
         <button className="btn-secondary compact" onClick={onBack}>List</button>
       </div>
     </div>
@@ -361,6 +396,72 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext }) {
         {!checked && <button className="btn-primary" onClick={onCheck}>Check answer</button>}
       </div>
       <button className="btn-secondary" onClick={onNext} disabled={idx === total - 1}>Next</button>
+    </div>
+  );
+}
+
+function ReportModal({ section, problemNumber, problemLabel, userEmail, onClose }) {
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState("idle");
+
+  async function handleSubmit() {
+    if (!reason.trim()) return;
+    setStatus("sending");
+    try {
+      emailjs.init("yTTgUnSO_K7drzPam"); 
+      await emailjs.send("service_rqzbtkr", "template_lqa08fq", {
+        section,
+        problem_number: problemNumber,
+        problem_label: problemLabel,
+        user_email: userEmail || "비로그인 사용자",
+        reason: reason.trim(),
+        timestamp: new Date().toLocaleString("ko-KR"),
+      });
+      setStatus("done");
+    } catch {
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>🚨 문제 신고</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-meta">{section} · {problemNumber}번 문제</div>
+
+        {status === "done" ? (
+          <div className="modal-success">
+            신고가 접수되었습니다. 빠르게 확인할게요!
+            <br />
+            <button className="btn-primary" style={{ marginTop: 16 }} onClick={onClose}>닫기</button>
+          </div>
+        ) : (
+          <>
+            <textarea
+              className="writing-textarea compact"
+              placeholder="오류 내용을 간단히 설명해주세요. (예: 정답이 틀렸어요, 지문에 오타가 있어요)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            {status === "error" && (
+              <div className="error-message" style={{ marginTop: 8 }}>전송에 실패했습니다. 다시 시도해주세요.</div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+              <button className="btn-secondary" onClick={onClose}>취소</button>
+              <button
+                className="btn-primary"
+                onClick={handleSubmit}
+                disabled={!reason.trim() || status === "sending"}
+              >
+                {status === "sending" ? "전송 중..." : "신고하기"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

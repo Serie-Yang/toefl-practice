@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import emailjs from "@emailjs/browser";
 import { useSheetData } from "../hooks/useSheetData";
 import { useSectionProgress } from "../useProgress";
+import { useAuth } from "../context/AuthContext";
 
 const SECTIONS = [
   { id: "interview", label: "Take an Interview" },
@@ -53,6 +55,8 @@ function TakeAnInterview() {
   const [timerStartedAt, setTimerStartedAt] = useState(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(45);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const { user } = useAuth();
   const now = useCurrentTime(timerRunning);
   const info = SPEAKING_INFO.interview;
   const speechTimerSeconds = getSpeechTimerSeconds(timerStartedAt, timerBaseSeconds, timerRunning, now);
@@ -86,6 +90,7 @@ function TakeAnInterview() {
     setQuestionIdx(nextQuestion);
     setShowSample(false);
     setShownSamples(new Set());
+    setShowReport(false);
     resetSpeechTimer();
   }
 
@@ -118,14 +123,13 @@ function TakeAnInterview() {
     setTimerRunning(false);
   }
 
-  
-
   return (
     <div className="question-card speaking-card">
       <QuestionHeader
         badge={getQuestionBadge(idx)}
         instruction={info.instruction}
         onBack={() => setIdx(null)}
+        onReport={() => setShowReport(true)}
       />
 
       {row.topic && <TextBlock className="prompt-text-block" text={row.topic} />}
@@ -176,6 +180,16 @@ function TakeAnInterview() {
           </button>
         )}
       </div>
+
+      {showReport && (
+        <ReportModal
+          section="Speaking - Take an Interview"
+          problemNumber={idx + 1}
+          problemLabel={getProblemLabel(row, idx)}
+          userEmail={user?.email ?? ""}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }
@@ -211,7 +225,7 @@ function SectionHome({ info, items, results, onSelect }) {
   );
 }
 
-function QuestionHeader({ badge, instruction, onBack }) {
+function QuestionHeader({ badge, instruction, onBack, onReport }) {
   return (
     <div className="question-meta">
       <div>
@@ -219,6 +233,7 @@ function QuestionHeader({ badge, instruction, onBack }) {
         <h2 className="question-instruction">{instruction}</h2>
       </div>
       <div className="question-tools">
+        <button className="btn-secondary compact" onClick={onReport}>🚨 Report</button>
         <button className="btn-secondary compact" onClick={onBack}>List</button>
       </div>
     </div>
@@ -233,6 +248,73 @@ function ResultDots({ attempts = [] }) {
         <span key={i} className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`} />
       ))}
     </span>
+  );
+}
+
+function ReportModal({ section, problemNumber, problemLabel, userEmail, onClose }) {
+  const [reason, setReason] = useState("");
+  const [status, setStatus] = useState("idle");
+
+  async function handleSubmit() {
+    if (!reason.trim()) return;
+    setStatus("sending");
+    try {
+      emailjs.init("yTTgUnSO_K7drzPam"); 
+      await emailjs.send("service_rqzbtkr", "template_lqa08fq", {
+        section,
+        problem_number: problemNumber,
+        problem_label: problemLabel,
+        user_email: userEmail || "비로그인 사용자",
+        reason: reason.trim(),
+        timestamp: new Date().toLocaleString("ko-KR"),
+      });
+      setStatus("done");
+    } catch (err) {
+      console.error("EmailJS error:", err);
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <span>🚨 문제 신고</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-meta">{section} · {problemNumber}번 문제</div>
+
+        {status === "done" ? (
+          <div className="modal-success">
+            신고가 접수되었습니다. 빠르게 확인할게요!
+            <br />
+            <button className="btn-primary" style={{ marginTop: 16 }} onClick={onClose}>닫기</button>
+          </div>
+        ) : (
+          <>
+            <textarea
+              className="writing-textarea compact"
+              placeholder="오류 내용을 간단히 설명해주세요. (예: 정답이 틀렸어요, 지문에 오타가 있어요)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            {status === "error" && (
+              <div className="error-message" style={{ marginTop: 8 }}>전송에 실패했습니다. 다시 시도해주세요.</div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12, justifyContent: "flex-end" }}>
+              <button className="btn-secondary" onClick={onClose}>취소</button>
+              <button
+                className="btn-primary"
+                onClick={handleSubmit}
+                disabled={!reason.trim() || status === "sending"}
+              >
+                {status === "sending" ? "전송 중..." : "신고하기"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
