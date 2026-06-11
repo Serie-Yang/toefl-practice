@@ -1319,3 +1319,108 @@ body {
   flex-direction: column;
   align-items: center;
 }
+
+/* ── ATTEMPT HISTORY ── */
+.attempt-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.attempt-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-600);
+}
+
+.attempt-label {
+  color: var(--gray-400);
+  font-weight: 500;
+}
+
+.attempt-choice {
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.attempt-choice.correct { color: var(--green); }
+.attempt-choice.incorrect { color: var(--red); }
+.attempt-choice.unanswered { color: var(--gray-400); }
+
+.attempt-result {
+  font-size: 11px;
+}
+
+.attempt-result.correct { color: var(--green); }
+.attempt-result.incorrect { color: var(--red); }
+
+/* ── CLOZE ATTEMPT HISTORY ── */
+.cloze-history {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.cloze-history-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+
+.cloze-history-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cloze-history-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cloze-attempt-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-400);
+  min-width: 68px;
+  flex-shrink: 0;
+}
+
+.cloze-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Inter', monospace;
+}
+
+.cloze-cell.correct {
+  background: var(--green-light);
+  color: var(--green);
+  border: 1px solid #c8e6c9;
+}
+
+.cloze-cell.incorrect {
+  background: var(--red-light);
+  color: var(--red);
+  border: 1px solid #ffcdd2;
+}

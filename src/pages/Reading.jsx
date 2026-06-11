@@ -74,7 +74,7 @@ export default function Reading() {
 
 function CompleteTheWords() {
   const { data, loading, error } = useSheetData("complete_words");
-  const { results, record } = useSectionProgress("reading_complete");
+  const { results, recordCloze, clozeHistory } = useSectionProgress("reading_complete");
   const [idx, setIdx] = useState(null);
   const [inputs, setInputs] = useState({});
   const [checked, setChecked] = useState(false);
@@ -105,12 +105,14 @@ function CompleteTheWords() {
   }
 
   async function handleCheck() {
-    const correct = answers.every((answer, i) =>
-      normalizeAnswer(getInputValue(i)) === normalizeAnswer(answer)
-    );
-    await record(idx, correct);
+    const typedValues = answers.map((_, i) => getInputValue(i));
+    await recordCloze(idx, typedValues, answers);
     setChecked(true);
   }
+
+  // 채점 후: index 0이 방금 제출한 시도 → slice(1)부터가 이전 시도
+  const currentClozeHistory = clozeHistory[idx] ?? [];
+  const previousClozeAttempts = checked ? currentClozeHistory.slice(1) : currentClozeHistory;
 
   return (
     <div className="question-card reading-card">
@@ -169,6 +171,10 @@ function CompleteTheWords() {
         })}
       </div>
 
+      {checked && previousClozeAttempts.length > 0 && (
+        <ClozeAttemptHistory attempts={previousClozeAttempts} answers={answers} />
+      )}
+
       <QuestionActions
         idx={idx}
         total={data.length}
@@ -193,7 +199,7 @@ function CompleteTheWords() {
 
 function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   const { data, loading, error } = useSheetData(sheetKey);
-  const { results, recordMc } = useSectionProgress(`reading_${sectionId}`);
+  const { results, recordMc, mcHistory } = useSectionProgress(`reading_${sectionId}`);
   const [idx, setIdx] = useState(null);
   const [selected, setSelected] = useState({});
   const [checked, setChecked] = useState(false);
@@ -230,11 +236,17 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
   }
 
   async function handleCheck() {
-    const correctMap = {};
-    questions.forEach((q) => { correctMap[q.n] = selected[q.n] === q.answer; });
-    await recordMc(idx, correctMap);
+    const answerMap = {};
+    questions.forEach((q) => { answerMap[q.n] = q.answer; });
+    await recordMc(idx, selected, answerMap);
     setChecked(true);
   }
+
+  // 현재 문제의 이전 시도 기록 (가장 최근이 index 0)
+  const currentMcHistory = (mcHistory[idx] ?? []);
+  // handleCheck 후 최신 시도가 index 0에 추가되므로,
+  // checked 상태일 때 index 0은 방금 한 시도 → index 1부터가 "이전" 시도
+  const previousAttempts = checked ? currentMcHistory.slice(1) : currentMcHistory;
 
   return (
     <div className="question-card reading-card">
@@ -276,6 +288,9 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
                   </button>
                 );
               })}
+              {checked && previousAttempts.length > 0 && (
+                <AttemptHistory attempts={previousAttempts} questionN={n} answer={answer} />
+              )}
             </div>
           ))}
         </section>
@@ -299,6 +314,71 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
           onClose={() => setShowReport(false)}
         />
       )}
+    </div>
+  );
+}
+
+// attempts: 가장 최근 → 가장 오래된 (index 0이 직전 시도)
+// answers: 정답 배열
+function ClozeAttemptHistory({ attempts, answers }) {
+  if (!attempts.length) return null;
+  return (
+    <div className="cloze-history">
+      <div className="cloze-history-title">Previous attempts</div>
+      <div className="cloze-history-grid">
+        {attempts.map((attempt, i) => {
+          const attemptNumber = attempts.length - i; // 오래된 게 1번
+          return (
+            <div key={i} className="cloze-history-row">
+              <span className="cloze-attempt-label">Attempt {attemptNumber}</span>
+              {(attempt.typed ?? []).map((val, blankIdx) => {
+                const isCorrect = normalizeAnswer(val) === normalizeAnswer(answers[blankIdx] ?? "");
+                return (
+                  <span
+                    key={blankIdx}
+                    className={`cloze-cell ${isCorrect ? "correct" : "incorrect"}`}
+                  >
+                    {val || "—"}
+                  </span>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// attempts: 가장 최근 → 가장 오래된 순서 (index 0이 직전 시도)
+// questionN: 현재 질문 번호 (1-based)
+// answer: 정답 옵션 ('a'/'b'/'c'/'d')
+function AttemptHistory({ attempts, questionN, answer }) {
+  if (!attempts.length) return null;
+  return (
+    <div className="attempt-history">
+      {attempts.map((attempt, i) => {
+        const chosen = attempt.selected?.[questionN];
+        const isCorrect = chosen === answer;
+        const attemptNumber = attempts.length - i; // 오래된 게 1번
+        return (
+          <span key={i} className="attempt-tag">
+            <span className="attempt-label">Attempt {attemptNumber}</span>
+            {chosen ? (
+              <>
+                <span className={`attempt-choice ${isCorrect ? "correct" : "incorrect"}`}>
+                  {chosen.toUpperCase()}
+                </span>
+                <span className={`attempt-result ${isCorrect ? "correct" : "incorrect"}`}>
+                  {isCorrect ? "✓" : "✗"}
+                </span>
+              </>
+            ) : (
+              <span className="attempt-choice unanswered">—</span>
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }
