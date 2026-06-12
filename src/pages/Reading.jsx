@@ -260,7 +260,13 @@ function ReadingPassage({ sectionId, sheetKey, maxQuestions }) {
       <div className="reading-layout">
         <section className="passage-panel">
           {row.title && <h2 className="passage-title">{row.title}</h2>}
-          <div className="passage-box">{row.passage}</div>
+          <div className="passage-box">
+            {(row.passage ?? "").split(/\n/).map((line, i) => (
+              <p key={i} style={{ margin: i === 0 ? 0 : "8px 0 0" }}>
+                {parseBold(line || "\u00a0")}
+              </p>
+            ))}
+          </div>
         </section>
 
         <section className="mc-questions">
@@ -451,6 +457,16 @@ function buildBlankTokens(text = "", answerCount = 0) {
 
 function normalizeAnswer(value = "") {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function parseBold(text) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={i}>{part.slice(2, -2)}</strong>
+      : part
+  );
 }
 
 function QuestionHeader({ badge, instruction, onBack, onReport }) {
