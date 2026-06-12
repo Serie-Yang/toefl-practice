@@ -73,9 +73,9 @@ export default function MyMenu() {
           <p style={{ color: "var(--gray-400)", fontSize: 14 }}>기록을 불러오는 중...</p>
         ) : (
           <>
-            <ReadingProgress reading={data[0]} />
-            <WritingProgress writing={data[1]} />
-            <SpeakingProgress speaking={data[2]} />
+            <ReadingProgress group={data[0]} />
+            <WritingProgress group={data[1]} />
+            <SpeakingProgress group={data[2]} />
           </>
         )}
       </div>
@@ -84,42 +84,45 @@ export default function MyMenu() {
 }
 
 /* ── READING ── */
-function ReadingProgress({ reading }) {
+function ReadingProgress({ group }) {
+  const [complete, daily, academic] = group.subsections;
   return (
     <div className="progress-card">
       <div className="progress-card-header">
         <div><h3>Reading</h3></div>
-        <AccuracyBadge accuracy={reading.summary} large />
+        <AccuracyBadge accuracy={group.summary} large />
       </div>
       <div className="progress-subsections">
-        <SubsectionAccuracy label="Complete the Words" accuracy={reading.complete} />
-        <SubsectionAccuracy label="Read in Daily Life" accuracy={reading.daily} />
-        <SubsectionAccuracy label="Read an Academic Passage" accuracy={reading.academic} />
+        <SubsectionAccuracy label="Complete the Words" accuracy={complete.accuracy} />
+        <SubsectionAccuracy label="Read in Daily Life" accuracy={daily.accuracy} />
+        <SubsectionAccuracy label="Read an Academic Passage" accuracy={academic.accuracy} />
       </div>
     </div>
   );
 }
 
 /* ── WRITING ── */
-function WritingProgress({ writing }) {
+function WritingProgress({ group }) {
+  const [sentence, email, discussion] = group.subsections;
   return (
     <div className="progress-card">
       <div className="progress-card-header">
         <div><h3>Writing</h3></div>
-        <AccuracyBadge accuracy={writing.sentence} large />
+        <AccuracyBadge accuracy={sentence.accuracy} large />
       </div>
       <div className="progress-subsections">
-        <SubsectionAccuracy label="Build a Sentence" accuracy={writing.sentence} />
-        <SubsectionWordCount label="Write an Email" stat={writing.email} targetWords={130} />
-        <SubsectionWordCount label="Academic Discussion" stat={writing.discussion} targetWords={120} />
+        <SubsectionAccuracy label="Build a Sentence" accuracy={sentence.accuracy} />
+        <SubsectionAccuracy label="Write an Email" accuracy={email.accuracy} />
+        <SubsectionAccuracy label="Academic Discussion" accuracy={discussion.accuracy} />
       </div>
     </div>
   );
 }
 
 /* ── SPEAKING ── */
-function SpeakingProgress({ speaking }) {
-  const count = speaking.interviewCount;
+function SpeakingProgress({ group }) {
+  const [interview] = group.subsections;
+  const count = interview.accuracy.attempted ?? 0;
   return (
     <div className="progress-card">
       <div className="progress-card-header">
@@ -146,7 +149,7 @@ function SpeakingProgress({ speaking }) {
 
 /* ── 공통 컴포넌트 ── */
 function SubsectionAccuracy({ label, accuracy }) {
-  const percent = accuracy.percent ?? 0;
+  const percent = accuracy?.percent ?? 0;
   return (
     <div className="progress-subsection">
       <span className="subsection-name">{label}</span>
@@ -160,32 +163,12 @@ function SubsectionAccuracy({ label, accuracy }) {
   );
 }
 
-function SubsectionWordCount({ label, stat, targetWords }) {
-  const avg = stat.avg ?? 0;
-  const barPercent = Math.min(Math.round((avg / targetWords) * 100), 100);
-  return (
-    <div className="progress-subsection">
-      <span className="subsection-name">{label}</span>
-      <div className="accuracy-row">
-        <div className="accuracy-track" aria-hidden="true">
-          <span style={{ width: `${barPercent}%` }} />
-        </div>
-        <div className="accuracy-badge">
-          <strong>{stat.avg !== null ? `${stat.avg}단어` : "--"}</strong>
-          <span>/ {targetWords}단어 기준</span>
-          <span>{stat.attempted}문제</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function AccuracyBadge({ accuracy, large = false }) {
-  const label = accuracy.percent === null ? "--" : `${accuracy.percent}%`;
+  const label = accuracy?.percent === null || accuracy?.percent === undefined ? "--" : `${accuracy.percent}%`;
   return (
     <div className={large ? "accuracy-badge large" : "accuracy-badge"}>
       <strong>{label}</strong>
-      <span>{accuracy.correct}/{accuracy.attempted}</span>
+      <span>{accuracy?.correct ?? 0}/{accuracy?.attempted ?? 0}</span>
     </div>
   );
 }
