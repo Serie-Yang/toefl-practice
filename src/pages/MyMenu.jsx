@@ -73,9 +73,9 @@ export default function MyMenu() {
           <p style={{ color: "var(--gray-400)", fontSize: 14 }}>기록을 불러오는 중...</p>
         ) : (
           <>
-            <ReadingProgress reading={data.reading} />
-            <WritingProgress writing={data.writing} />
-            <SpeakingProgress speaking={data.speaking} />
+            <ReadingProgress reading={data[0]} />
+            <WritingProgress writing={data[1]} />
+            <SpeakingProgress speaking={data[2]} />
           </>
         )}
       </div>
