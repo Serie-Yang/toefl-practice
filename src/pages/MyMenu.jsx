@@ -112,8 +112,31 @@ function WritingProgress({ group }) {
       </div>
       <div className="progress-subsections">
         <SubsectionAccuracy label="Build a Sentence" accuracy={sentence.accuracy} />
-        <SubsectionAccuracy label="Write an Email" accuracy={email.accuracy} />
-        <SubsectionAccuracy label="Academic Discussion" accuracy={discussion.accuracy} />
+        <WritingSubsection label="Write an Email" stats={email.writingStats} />
+        <WritingSubsection label="Academic Discussion" stats={discussion.writingStats} />
+      </div>
+    </div>
+  );
+}
+
+function WritingSubsection({ label, stats }) {
+  const attempted = stats?.attempted ?? 0;
+  const avgWords = stats?.avgWords ?? null;
+  return (
+    <div className="progress-subsection">
+      <span className="subsection-name">{label}</span>
+      <div className="accuracy-row">
+        <div style={{ flex: 1 }} />
+        <div className="accuracy-badge">
+          {attempted === 0 ? (
+            <strong>--</strong>
+          ) : (
+            <>
+              <strong>{avgWords ?? "--"}</strong>
+              <span>avg words · {attempted}문제</span>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

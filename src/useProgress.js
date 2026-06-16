@@ -22,7 +22,7 @@ function sectionRef(uid, sectionKey) {
 
 async function readSection(uid, sectionKey) {
   const snap = await getDoc(sectionRef(uid, sectionKey));
-  return snap.exists() ? snap.data() : { attempts: [], byProblem: {}, byProblemMc: {}, byProblemCloze: {} };
+  return snap.exists() ? snap.data() : { attempts: [], byProblem: {}, byProblemMc: {}, byProblemCloze: {}, byProblemWriting: {} };
 }
 
 async function getSectionResults(uid, sectionKey) {
@@ -122,6 +122,41 @@ async function recordMcAttempt(uid, sectionKey, problemIndex, selectedMap, answe
   return { byProblem: nextSection.byProblem, byProblemMc: nextSection.byProblemMc };
 }
 
+async function recordWritingAttempt(uid, sectionKey, problemIndex, wordCount, draft, elapsedSeconds) {
+  const section = await readSection(uid, sectionKey);
+  const entry = { wordCount, draft, elapsedSeconds: elapsedSeconds ?? null, timestamp: Date.now() };
+  const prevHistory = (section.byProblemWriting ?? {})[problemIndex] ?? [];
+
+  const nextSection = {
+    ...section,
+    byProblem: {
+      ...(section.byProblem ?? {}),
+      [problemIndex]: [
+        true,
+        ...((section.byProblem ?? {})[problemIndex] ?? []),
+      ].slice(0, 3),
+    },
+    byProblemWriting: {
+      ...(section.byProblemWriting ?? {}),
+      [problemIndex]: [entry, ...prevHistory],
+    },
+  };
+
+  await setDoc(sectionRef(uid, sectionKey), nextSection);
+  return { byProblem: nextSection.byProblem, byProblemWriting: nextSection.byProblemWriting };
+}
+
+async function getWritingStats(uid, sectionKey) {
+  const data = await readSection(uid, sectionKey);
+  const byProblemWriting = data.byProblemWriting ?? {};
+  const attempted = Object.keys(byProblemWriting).length;
+  const allEntries = Object.values(byProblemWriting).flatMap((entries) => entries);
+  const avgWords = allEntries.length
+    ? Math.round(allEntries.reduce((sum, e) => sum + (e.wordCount ?? 0), 0) / allEntries.length)
+    : null;
+  return { attempted, avgWords };
+}
+
 async function getRecentAccuracy(uid, sectionKey, limit = 20) {
   const data = await readSection(uid, sectionKey);
   const recent = (data.attempts ?? []).slice(0, limit);
@@ -168,6 +203,7 @@ export function useSectionProgress(sectionKey) {
   const [results, setResults] = useState({});
   const [mcHistory, setMcHistory] = useState({});
   const [clozeHistory, setClozeHistory] = useState({});
+  const [writingHistory, setWritingHistory] = useState({});
 
   useEffect(() => {
     if (!uid) return;
@@ -175,6 +211,7 @@ export function useSectionProgress(sectionKey) {
       setResults(data.byProblem ?? {});
       setMcHistory(data.byProblemMc ?? {});
       setClozeHistory(data.byProblemCloze ?? {});
+      setWritingHistory(data.byProblemWriting ?? {});
     });
   }, [uid, sectionKey]);
 
@@ -210,7 +247,23 @@ export function useSectionProgress(sectionKey) {
     [uid, sectionKey]
   );
 
-  return { results, record, recordMc, mcHistory, recordCloze, clozeHistory };
+  const recordWords = useCallback(
+    async (problemIndex, wordCount, draft, elapsedSeconds) => {
+      if (!uid) return {};
+      const updated = await recordWritingAttempt(uid, sectionKey, problemIndex, wordCount, draft, elapsedSeconds);
+      setResults(updated.byProblem);
+      setWritingHistory(updated.byProblemWriting);
+      return updated;
+    },
+    [uid, sectionKey]
+  );
+
+  const getLastDraft = useCallback(
+    (problemIndex) => writingHistory[problemIndex]?.[0]?.draft ?? "",
+    [writingHistory]
+  );
+
+  return { results, record, recordMc, mcHistory, recordCloze, clozeHistory, recordWords, getLastDraft, writingHistory };
 }
 
 /**
@@ -226,10 +279,17 @@ export function useAllProgress() {
     if (!uid) return;
     const groups = ["Reading", "Writing", "Speaking"];
 
-    const [groupAccuracies, sectionAccuracies] = await Promise.all([
+    const [groupAccuracies, sectionAccuracies, emailStats, discussionStats] = await Promise.all([
       Promise.all(groups.map((g) => getGroupRecentAccuracy(uid, g))),
       Promise.all(PROGRESS_SECTIONS.map((s) => getRecentAccuracy(uid, s.key))),
+      getWritingStats(uid, "writing_email"),
+      getWritingStats(uid, "writing_discussion"),
     ]);
+
+    const writingStatsMap = {
+      writing_email: emailStats,
+      writing_discussion: discussionStats,
+    };
 
     const result = groups.map((group, gi) => ({
       title: group,
@@ -239,6 +299,7 @@ export function useAllProgress() {
         .map((s) => ({
           ...s,
           accuracy: sectionAccuracies[PROGRESS_SECTIONS.indexOf(s)],
+          writingStats: writingStatsMap[s.key] ?? null,
         })),
     }));
 

@@ -230,7 +230,7 @@ function AcademicDiscussion() {
 }
 
 function EmailTask({ data, loading, error }) {
-  const { results, recordWords, getLastDraft } = useSectionProgress("writing_email");
+  const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_email");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
@@ -238,8 +238,9 @@ function EmailTask({ data, loading, error }) {
   const [showReport, setShowReport] = useState(false);
   const { user } = useAuth();
   const info = WRITING_INFO.email;
+  const TOTAL_SECONDS = 7 * 60;
   const minWords = 100;
-  const remainingSeconds = useAutoCountdown(timerStartedAt, 7 * 60);
+  const remainingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -247,7 +248,10 @@ function EmailTask({ data, loading, error }) {
   if (idx === null) {
     return (
       <SectionHome info={info} items={data} results={results}
-        renderDots={(attempts) => <WordCountDots attempts={attempts} targetWords={130} />}
+        writingHistory={writingHistory}
+        renderDots={(itemIdx) => (
+          <WordCountDots history={writingHistory[itemIdx]} targetWords={130} />
+        )}
         onSelect={(i) => openQuestion(i)}
       />
     );
@@ -272,7 +276,9 @@ function EmailTask({ data, loading, error }) {
   }
 
   async function handleShowSample() {
-    if (recordWords) await recordWords(idx, countWords(response), response);
+    const elapsedSeconds = timerStartedAt ? Math.floor((Date.now() - timerStartedAt) / 1000) : null;
+    setTimerStartedAt(null); // 타이머 스탑
+    if (recordWords) await recordWords(idx, countWords(response), response, elapsedSeconds);
     setShowSample(true);
   }
 
@@ -337,7 +343,7 @@ function EmailTask({ data, loading, error }) {
 }
 
 function DiscussionTask({ data, loading, error }) {
-  const { results, recordWords, getLastDraft } = useSectionProgress("writing_discussion");
+  const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_discussion");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
@@ -345,8 +351,9 @@ function DiscussionTask({ data, loading, error }) {
   const [showReport, setShowReport] = useState(false);
   const { user } = useAuth();
   const info = WRITING_INFO.discussion;
+  const TOTAL_SECONDS = 10 * 60;
   const minWords = 100;
-  const remainingSeconds = useAutoCountdown(timerStartedAt, 10 * 60);
+  const remainingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -354,7 +361,10 @@ function DiscussionTask({ data, loading, error }) {
   if (idx === null) {
     return (
       <SectionHome info={info} items={data} results={results}
-        renderDots={(attempts) => <WordCountDots attempts={attempts} targetWords={120} />}
+        writingHistory={writingHistory}
+        renderDots={(itemIdx) => (
+          <WordCountDots history={writingHistory[itemIdx]} targetWords={120} />
+        )}
         onSelect={(i) => openQuestion(i)}
       />
     );
@@ -379,7 +389,9 @@ function DiscussionTask({ data, loading, error }) {
   }
 
   async function handleShowSample() {
-    if (recordWords) await recordWords(idx, countWords(response), response);
+    const elapsedSeconds = timerStartedAt ? Math.floor((Date.now() - timerStartedAt) / 1000) : null;
+    setTimerStartedAt(null); // 타이머 스탑
+    if (recordWords) await recordWords(idx, countWords(response), response, elapsedSeconds);
     setShowSample(true);
   }
 
@@ -467,7 +479,7 @@ function SectionHome({ info, items, results, onSelect, renderDots }) {
           <button key={row.id || itemIdx} className="problem-list-item" onClick={() => onSelect(itemIdx)}>
             <span className="problem-index">{itemIdx + 1}</span>
             <span className="problem-copy">{getProblemLabel(row, itemIdx)}</span>
-            {renderDots ? renderDots(results[itemIdx]) : <ResultDots attempts={results[itemIdx]} />}
+            {renderDots ? renderDots(itemIdx) : <ResultDots attempts={results[itemIdx]} />}
           </button>
         ))}
       </div>
@@ -475,25 +487,26 @@ function SectionHome({ info, items, results, onSelect, renderDots }) {
   );
 }
 
-function WordCountDots({ attempts = [], targetWords }) {
-  if (!attempts || attempts.length === 0) {
+// history: writingHistory[itemIdx] = [{wordCount, draft, elapsedSeconds, timestamp}, ...]
+function WordCountDots({ history, targetWords }) {
+  if (!history || history.length === 0) {
+    // 기록 없음 → 빈 점 하나
     return (
       <span className="result-dots">
         <span className="result-dot" />
       </span>
     );
   }
-  const recent = Array.isArray(attempts) ? attempts[0] : null;
-  if (recent === null || recent === undefined) {
-    return <span className="result-dots"><span className="result-dot" /></span>;
-  }
+  // 가장 최근 시도의 단어 수
+  const recent = history[0]?.wordCount ?? 0;
+  const reached = recent >= targetWords;
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
       <span style={{
         fontSize: 11, fontWeight: 700, padding: "2px 6px", borderRadius: 999,
-        background: recent >= targetWords ? "var(--green-light)" : "var(--gray-100)",
-        color: recent >= targetWords ? "var(--green)" : "var(--gray-600)",
-        border: `1px solid ${recent >= targetWords ? "#c8e6c9" : "var(--gray-200)"}`,
+        background: reached ? "var(--green-light)" : "var(--gray-100)",
+        color: reached ? "var(--green)" : "var(--gray-600)",
+        border: `1px solid ${reached ? "#c8e6c9" : "var(--gray-200)"}`,
       }}>
         {recent}
       </span>
