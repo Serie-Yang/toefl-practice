@@ -36,6 +36,7 @@ async function recordSectionAttempt(uid, sectionKey, problemIndex, correct) {
   const attempt = { correct: result, problemIndex, timestamp: Date.now() };
 
   const nextSection = {
+    ...section,
     attempts: [attempt, ...(section.attempts ?? [])].slice(0, 200),
     byProblem: {
       ...(section.byProblem ?? {}),
@@ -44,7 +45,6 @@ async function recordSectionAttempt(uid, sectionKey, problemIndex, correct) {
         ...((section.byProblem ?? {})[problemIndex] ?? []),
       ].slice(0, 3),
     },
-    byProblemMc: section.byProblemMc ?? {},
   };
 
   await setDoc(sectionRef(uid, sectionKey), nextSection);

@@ -132,8 +132,8 @@ function WritingSubsection({ label, stats }) {
             <strong>--</strong>
           ) : (
             <>
-              <strong>{avgWords ?? "--"}</strong>
-              <span>avg words · {attempted}문제</span>
+              <strong>{avgWords ?? "--"}<span style={{ fontWeight: 400, fontSize: 11 }}> 단어</span></strong>
+              <span>평균 · {attempted}문제</span>
             </>
           )}
         </div>

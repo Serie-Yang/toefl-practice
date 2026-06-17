@@ -321,6 +321,7 @@ function EmailTask({ data, loading, error }) {
         </div>
       )}
 
+
       <QuestionActions idx={idx} total={data.length} checked={showSample}
         onPrev={() => openQuestion(Math.max(idx - 1, 0))}
         onCheck={handleShowSample}
@@ -328,6 +329,12 @@ function EmailTask({ data, loading, error }) {
         checkLabel="Show sample"
         extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
       />
+
+            {!showSample && (
+        <p style={{ fontSize: 12, color: "var(--gray-400)", textAlign: "center", margin: "12px 0 0"}}>
+          Show sample 버튼을 누르면 작성한 내용이 저장됩니다.
+        </p>
+      )}
 
       {showReport && (
         <ReportModal
@@ -442,6 +449,12 @@ function DiscussionTask({ data, loading, error }) {
         checkLabel="Show sample"
         extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
       />
+
+            {!showSample && (
+        <p style={{ fontSize: 12, color: "var(--gray-400)", textAlign: "center", margin: "12px 0 0" }}>
+          Show sample 버튼을 누르면 작성한 내용이 저장됩니다.
+        </p>
+      )}
 
       {showReport && (
         <ReportModal

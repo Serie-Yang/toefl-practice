@@ -94,20 +94,20 @@ function TakeAnInterview() {
     resetSpeechTimer();
   }
 
-  function moveQuestion(direction) {
+  async function moveQuestion(direction) {
     const next = questionIdx + direction;
     if (next >= 0 && next < questions.length) {
+      if (next === questions.length - 1) {
+        await record(idx, true);
+      }
       resetQuestion(idx, next);
     }
   }
 
-  async function handleShowSample() {
+  function handleShowSample() {
     const next = new Set(shownSamples).add(questionIdx);
     setShownSamples(next);
     setShowSample(true);
-    if (next.size === questions.length) {
-      await record(idx, true);
-    }
   }
 
   function startSpeechTimer() {
@@ -241,12 +241,11 @@ function QuestionHeader({ badge, instruction, onBack, onReport }) {
 }
 
 function ResultDots({ attempts = [] }) {
-  const dots = Array.from({ length: 3 }, (_, i) => attempts[i]);
+  // Speaking은 완료 여부만 표시 (점 1개)
+  const done = attempts[0] === true;
   return (
     <span className="result-dots" aria-label="Recent results">
-      {dots.map((result, i) => (
-        <span key={i} className={`result-dot ${result === true ? "correct" : result === false ? "incorrect" : ""}`} />
-      ))}
+      <span className={`result-dot ${done ? "correct" : ""}`} />
     </span>
   );
 }

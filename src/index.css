@@ -617,7 +617,7 @@ body {
 .sample-answer,
 .feedback-box,
 .speaking-prompt {
-  padding: 16px;
+  padding: 19px;
   color: var(--gray-800);
   font-size: 15px;
   line-height: 1.65;
@@ -707,8 +707,8 @@ body {
 }
 
 .speaking-prompt p {
-  font-size: 19px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   line-height: 1.5;
   margin: 14px 0;
 }
