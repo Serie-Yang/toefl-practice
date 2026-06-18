@@ -250,7 +250,7 @@ function EmailTask({ data, loading, error }) {
       <SectionHome info={info} items={data} results={results}
         writingHistory={writingHistory}
         renderDots={(itemIdx) => (
-          <WordCountDots history={writingHistory[itemIdx]} targetWords={130} />
+          <WordCountDots history={writingHistory[itemIdx]} targetWords={120} />
         )}
         onSelect={(i) => openQuestion(i)}
       />

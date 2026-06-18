@@ -112,28 +112,32 @@ function WritingProgress({ group }) {
       </div>
       <div className="progress-subsections">
         <SubsectionAccuracy label="Build a Sentence" accuracy={sentence.accuracy} />
-        <WritingSubsection label="Write an Email" stats={email.writingStats} />
-        <WritingSubsection label="Academic Discussion" stats={discussion.writingStats} />
+        <WritingSubsection label="Write an Email" stats={email.writingStats} targetWords={120} />
+        <WritingSubsection label="Academic Discussion" stats={discussion.writingStats} targetWords={120} />
       </div>
     </div>
   );
 }
 
-function WritingSubsection({ label, stats }) {
+function WritingSubsection({ label, stats, targetWords }) {
   const attempted = stats?.attempted ?? 0;
   const avgWords = stats?.avgWords ?? null;
+  const percent = avgWords !== null ? Math.min(Math.round((avgWords / targetWords) * 100), 100) : 0;
+
   return (
     <div className="progress-subsection">
       <span className="subsection-name">{label}</span>
       <div className="accuracy-row">
-        <div style={{ flex: 1 }} />
+        <div className="accuracy-track" aria-hidden="true">
+          <span style={{ width: `${attempted > 0 ? percent : 0}%` }} />
+        </div>
         <div className="accuracy-badge">
           {attempted === 0 ? (
             <strong>--</strong>
           ) : (
             <>
-              <strong>{avgWords ?? "--"}<span style={{ fontWeight: 400, fontSize: 11 }}> 단어</span></strong>
-              <span>평균 · {attempted}문제</span>
+              <strong>{avgWords ?? "--"}단어</strong>
+              <span>{attempted}문제 평균</span>
             </>
           )}
         </div>
