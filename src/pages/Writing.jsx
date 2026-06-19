@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import emailjs from "@emailjs/browser";
 import { useSheetData } from "../hooks/useSheetData";
 import { useSectionProgress } from "../useProgress";
+import { useMySubmissions } from "../useSubmissions";
 import { useAuth } from "../context/AuthContext";
 
 const SECTIONS = [
@@ -231,16 +232,24 @@ function AcademicDiscussion() {
 
 function EmailTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_email");
+  const { submissions, submit: submitForReview } = useMySubmissions("writing_email");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const [frozenSeconds, setFrozenSeconds] = useState(null); // 멈춘 시간 저장
   const [showReport, setShowReport] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("idle");
+  const [feedbackSub, setFeedbackSub] = useState(null);
   const { user } = useAuth();
   const info = WRITING_INFO.email;
   const TOTAL_SECONDS = 7 * 60;
   const minWords = 100;
-  const remainingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
+  const countingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
+  const remainingSeconds = frozenSeconds !== null ? frozenSeconds : countingSeconds;
+
+  // 자동저장: response가 바뀌면 2초 후 저장
+  useDebounceAutoSave(response, idx, timerStartedAt, recordWords);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -249,8 +258,14 @@ function EmailTask({ data, loading, error }) {
     return (
       <SectionHome info={info} items={data} results={results}
         writingHistory={writingHistory}
+        submissions={submissions}
         renderDots={(itemIdx) => (
-          <WordCountDots history={writingHistory[itemIdx]} targetWords={120} />
+          <WritingStatusDots
+            history={writingHistory[itemIdx]}
+            targetWords={120}
+            subList={submissions[itemIdx] ?? []}
+            onFeedbackClick={(sub) => setFeedbackSub(sub)}
+          />
         )}
         onSelect={(i) => openQuestion(i)}
       />
@@ -259,6 +274,8 @@ function EmailTask({ data, loading, error }) {
 
   const row = data[idx];
   const words = countWords(response);
+  const problemLabel = getProblemLabel(row, idx);
+  const latestSub = (submissions[idx] ?? [])[0] ?? null;
 
   function openQuestion(nextIdx) {
     const draft = getLastDraft ? getLastDraft(nextIdx) : "";
@@ -266,20 +283,36 @@ function EmailTask({ data, loading, error }) {
     setResponse(draft);
     setShowSample(false);
     setTimerStartedAt(draft ? null : Date.now());
+    setFrozenSeconds(null);
     setShowReport(false);
+    setSubmitStatus("idle");
   }
 
   function handleReset() {
     setResponse("");
     setShowSample(false);
     setTimerStartedAt(Date.now());
+    setFrozenSeconds(null);
+    setSubmitStatus("idle");
   }
 
-  async function handleShowSample() {
-    const elapsedSeconds = timerStartedAt ? Math.floor((Date.now() - timerStartedAt) / 1000) : null;
-    setTimerStartedAt(null); // 타이머 스탑
-    if (recordWords) await recordWords(idx, countWords(response), response, elapsedSeconds);
+  function handleShowSample() {
+    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setTimerStartedAt(null);
     setShowSample(true);
+  }
+
+  async function handleSubmitForReview() {
+    if (!response.trim()) return;
+    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setTimerStartedAt(null);
+    setSubmitStatus("sending");
+    try {
+      await submitForReview(idx, problemLabel, response, words);
+      setSubmitStatus("done");
+    } catch {
+      setSubmitStatus("error");
+    }
   }
 
   return (
@@ -311,6 +344,13 @@ function EmailTask({ data, loading, error }) {
           <div className={words >= minWords ? "word-status ready" : "word-status"}>
             {words >= minWords ? "Word target reached" : `${Math.max(minWords - words, 0)} words to target`}
           </div>
+          {/* Reset / Show sample 버튼을 패널 안으로 */}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn-secondary" style={{ fontSize: 13, padding: "6px 12px" }} onClick={handleReset}>Reset</button>
+            {!showSample && (
+              <button className="btn-secondary" style={{ fontSize: 13, padding: "6px 12px" }} onClick={handleShowSample}>Show sample</button>
+            )}
+          </div>
         </section>
       </div>
 
@@ -321,29 +361,27 @@ function EmailTask({ data, loading, error }) {
         </div>
       )}
 
-
-      <QuestionActions idx={idx} total={data.length} checked={showSample}
-        onPrev={() => openQuestion(Math.max(idx - 1, 0))}
-        onCheck={handleShowSample}
-        onNext={() => openQuestion(Math.min(idx + 1, data.length - 1))}
-        checkLabel="Show sample"
-        extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
+      {/* 피드백 받기 섹션 */}
+      <SubmitForReviewSection
+        response={response}
+        status={submitStatus}
+        latestSub={latestSub}
+        onSubmit={handleSubmitForReview}
+        onViewFeedback={() => setFeedbackSub(latestSub)}
       />
-
-            {!showSample && (
-        <p style={{ fontSize: 12, color: "var(--gray-400)", textAlign: "center", margin: "12px 0 0"}}>
-          Show sample 버튼을 누르면 작성한 내용이 저장됩니다.
-        </p>
-      )}
 
       {showReport && (
         <ReportModal
           section="Writing - Write an Email"
           problemNumber={idx + 1}
-          problemLabel={getProblemLabel(row, idx)}
+          problemLabel={problemLabel}
           userEmail={user?.email ?? ""}
           onClose={() => setShowReport(false)}
         />
+      )}
+
+      {feedbackSub && (
+        <FeedbackModal sub={feedbackSub} onClose={() => setFeedbackSub(null)} />
       )}
     </div>
   );
@@ -351,16 +389,24 @@ function EmailTask({ data, loading, error }) {
 
 function DiscussionTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_discussion");
+  const { submissions, submit: submitForReview } = useMySubmissions("writing_discussion");
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
+  const [frozenSeconds, setFrozenSeconds] = useState(null);
   const [showReport, setShowReport] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState("idle");
+  const [feedbackSub, setFeedbackSub] = useState(null);
   const { user } = useAuth();
   const info = WRITING_INFO.discussion;
   const TOTAL_SECONDS = 10 * 60;
   const minWords = 100;
-  const remainingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
+  const countingSeconds = useAutoCountdown(timerStartedAt, TOTAL_SECONDS);
+  const remainingSeconds = frozenSeconds !== null ? frozenSeconds : countingSeconds;
+
+  // 자동저장: response가 바뀌면 2초 후 저장
+  useDebounceAutoSave(response, idx, timerStartedAt, recordWords);
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -369,8 +415,14 @@ function DiscussionTask({ data, loading, error }) {
     return (
       <SectionHome info={info} items={data} results={results}
         writingHistory={writingHistory}
+        submissions={submissions}
         renderDots={(itemIdx) => (
-          <WordCountDots history={writingHistory[itemIdx]} targetWords={120} />
+          <WritingStatusDots
+            history={writingHistory[itemIdx]}
+            targetWords={120}
+            subList={submissions[itemIdx] ?? []}
+            onFeedbackClick={(sub) => setFeedbackSub(sub)}
+          />
         )}
         onSelect={(i) => openQuestion(i)}
       />
@@ -379,6 +431,8 @@ function DiscussionTask({ data, loading, error }) {
 
   const row = data[idx];
   const words = countWords(response);
+  const problemLabel = getProblemLabel(row, idx);
+  const latestSub = (submissions[idx] ?? [])[0] ?? null;
 
   function openQuestion(nextIdx) {
     const draft = getLastDraft ? getLastDraft(nextIdx) : "";
@@ -386,20 +440,36 @@ function DiscussionTask({ data, loading, error }) {
     setResponse(draft);
     setShowSample(false);
     setTimerStartedAt(draft ? null : Date.now());
+    setFrozenSeconds(null);
     setShowReport(false);
+    setSubmitStatus("idle");
   }
 
   function handleReset() {
     setResponse("");
     setShowSample(false);
     setTimerStartedAt(Date.now());
+    setFrozenSeconds(null);
+    setSubmitStatus("idle");
   }
 
-  async function handleShowSample() {
-    const elapsedSeconds = timerStartedAt ? Math.floor((Date.now() - timerStartedAt) / 1000) : null;
-    setTimerStartedAt(null); // 타이머 스탑
-    if (recordWords) await recordWords(idx, countWords(response), response, elapsedSeconds);
+  function handleShowSample() {
+    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setTimerStartedAt(null);
     setShowSample(true);
+  }
+
+  async function handleSubmitForReview() {
+    if (!response.trim()) return;
+    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setTimerStartedAt(null);
+    setSubmitStatus("sending");
+    try {
+      await submitForReview(idx, problemLabel, response, words);
+      setSubmitStatus("done");
+    } catch {
+      setSubmitStatus("error");
+    }
   }
 
   return (
@@ -432,6 +502,13 @@ function DiscussionTask({ data, loading, error }) {
           <div className={words >= minWords ? "word-status ready" : "word-status"}>
             {words >= minWords ? "Word target reached" : `${Math.max(minWords - words, 0)} words to target`}
           </div>
+          {/* Reset / Show sample 버튼을 패널 안으로 */}
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button className="btn-secondary" style={{ fontSize: 13, padding: "6px 12px" }} onClick={handleReset}>Reset</button>
+            {!showSample && (
+              <button className="btn-secondary" style={{ fontSize: 13, padding: "6px 12px" }} onClick={handleShowSample}>Show sample</button>
+            )}
+          </div>
 
           {showSample && row.sample && (
             <div className="sample-answer" style={{ marginTop: 16 }}>
@@ -442,28 +519,27 @@ function DiscussionTask({ data, loading, error }) {
         </section>
       </div>
 
-      <QuestionActions idx={idx} total={data.length} checked={showSample}
-        onPrev={() => openQuestion(Math.max(idx - 1, 0))}
-        onCheck={handleShowSample}
-        onNext={() => openQuestion(Math.min(idx + 1, data.length - 1))}
-        checkLabel="Show sample"
-        extraAction={!showSample && <button className="btn-secondary" onClick={handleReset}>Reset</button>}
+      {/* 피드백 받기 섹션 */}
+      <SubmitForReviewSection
+        response={response}
+        status={submitStatus}
+        latestSub={latestSub}
+        onSubmit={handleSubmitForReview}
+        onViewFeedback={() => setFeedbackSub(latestSub)}
       />
-
-            {!showSample && (
-        <p style={{ fontSize: 12, color: "var(--gray-400)", textAlign: "center", margin: "12px 0 0" }}>
-          Show sample 버튼을 누르면 작성한 내용이 저장됩니다.
-        </p>
-      )}
 
       {showReport && (
         <ReportModal
           section="Writing - Academic Discussion"
           problemNumber={idx + 1}
-          problemLabel={getProblemLabel(row, idx)}
+          problemLabel={problemLabel}
           userEmail={user?.email ?? ""}
           onClose={() => setShowReport(false)}
         />
+      )}
+
+      {feedbackSub && (
+        <FeedbackModal sub={feedbackSub} onClose={() => setFeedbackSub(null)} />
       )}
     </div>
   );
@@ -500,30 +576,174 @@ function SectionHome({ info, items, results, onSelect, renderDots }) {
   );
 }
 
-// history: writingHistory[itemIdx] = [{wordCount, draft, elapsedSeconds, timestamp}, ...]
-function WordCountDots({ history, targetWords }) {
-  if (!history || history.length === 0) {
-    // 기록 없음 → 빈 점 하나
-    return (
-      <span className="result-dots">
-        <span className="result-dot" />
-      </span>
-    );
-  }
-  // 가장 최근 시도의 단어 수
-  const recent = history[0]?.wordCount ?? 0;
-  const reached = recent >= targetWords;
+// history: writingHistory[itemIdx], subList: submissions[itemIdx]
+function WritingStatusDots({ history, targetWords, subList = [], onFeedbackClick }) {
+  const recent = history?.[0]?.wordCount ?? 0;
+  const reached = history && history.length > 0 && recent >= targetWords;
+  const latestSub = subList[0] ?? null;
+
   return (
     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-      <span style={{
-        fontSize: 11, fontWeight: 700, padding: "2px 6px", borderRadius: 999,
-        background: reached ? "var(--green-light)" : "var(--gray-100)",
-        color: reached ? "var(--green)" : "var(--gray-600)",
-        border: `1px solid ${reached ? "#c8e6c9" : "var(--gray-200)"}`,
-      }}>
-        {recent}
-      </span>
+      {/* 단어 수 뱃지 */}
+      {history && history.length > 0 ? (
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: "2px 6px", borderRadius: 999,
+          background: reached ? "var(--green-light)" : "var(--gray-100)",
+          color: reached ? "var(--green)" : "var(--gray-600)",
+          border: `1px solid ${reached ? "#c8e6c9" : "var(--gray-200)"}`,
+        }}>
+          {recent}
+        </span>
+      ) : (
+        <span className="result-dot" />
+      )}
+
+      {/* 제출 상태 뱃지 */}
+      {latestSub && (
+        latestSub.status === "reviewed" ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); onFeedbackClick(latestSub); }}
+            style={{
+              fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+              background: "var(--blue-light)", color: "var(--blue)",
+              border: "1.5px solid var(--blue-mid)", cursor: "pointer",
+            }}
+          >
+            {latestSub.score}점
+          </button>
+        ) : (
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 999,
+            background: "#fffbeb", color: "#92400e",
+            border: "1px solid #fde68a",
+          }}>
+            검토중
+          </span>
+        )
+      )}
     </span>
+  );
+}
+
+// ── Submit for Review 영역 ─────────────────────────────────
+function SubmitForReviewSection({ response, status, latestSub, onSubmit, onViewFeedback }) {
+  const hasText = response.trim().length > 0;
+
+  return (
+    <div style={{
+      marginTop: 20, paddingTop: 18, borderTop: "1px solid var(--gray-200)",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+    }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gray-800)" }}>
+          선생님 피드백 받기
+        </div>
+        <div style={{ fontSize: 12, color: "var(--gray-400)", marginTop: 2 }}>
+          작성한 글을 제출하면 점수와 피드백을 받을 수 있습니다.
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+        {latestSub?.status === "reviewed" && (
+          <button className="btn-secondary" onClick={onViewFeedback}>
+            피드백 보기
+          </button>
+        )}
+        {latestSub?.status === "pending" ? (
+          <span style={{
+            fontSize: 13, fontWeight: 700, padding: "8px 14px", borderRadius: 7,
+            background: "#fffbeb", color: "#92400e", border: "1px solid #fde68a",
+          }}>
+            ⏳ 검토 중
+          </span>
+        ) : (
+          <button
+            className="btn-primary"
+            onClick={onSubmit}
+            disabled={!hasText || status === "sending"}
+          >
+            {status === "sending" ? "제출 중..." : status === "done" ? "제출 완료 ✓" : "제출하기"}
+          </button>
+        )}
+      </div>
+      {status === "error" && (
+        <div className="error-message" style={{ width: "100%", marginTop: 4 }}>
+          제출에 실패했습니다. 다시 시도해주세요.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 피드백 상세 팝업 ──────────────────────────────────────
+function FeedbackModal({ sub, onClose }) {
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: 680, width: "100%", maxHeight: "90vh", overflowY: "auto" }}
+      >
+        <div className="modal-header">
+          <span>📝 피드백 결과</span>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-meta" style={{ marginBottom: 18 }}>
+          {sub.problemLabel} · {new Date(sub.submittedAt).toLocaleDateString("ko-KR")}
+        </div>
+
+        {/* 점수 */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 16, marginBottom: 20,
+          padding: "14px 18px", background: "var(--blue-light)", borderRadius: 8,
+        }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: "0.04em" }}>TOEFL Writing Score</div>
+            <div style={{ fontSize: 36, fontWeight: 800, color: "var(--blue)", lineHeight: 1.1 }}>{sub.score}<span style={{ fontSize: 16 }}> / 6.0</span></div>
+          </div>
+        </div>
+
+        {/* 코멘트 */}
+        {sub.comment && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-400)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>Comment</div>
+            <div style={{ fontSize: 14, lineHeight: 1.7, color: "var(--gray-800)", whiteSpace: "pre-wrap" }}>{sub.comment}</div>
+          </div>
+        )}
+
+        {/* 내 글 */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-400)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>내가 쓴 글</div>
+          <div style={{
+            background: "#f8faff", border: "1px solid var(--gray-200)", borderRadius: 8,
+            padding: "14px 16px", fontSize: 14, lineHeight: 1.7, color: "var(--gray-800)",
+            whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto",
+          }}>
+            {sub.draft}
+          </div>
+        </div>
+
+        {/* Revised - HTML 피드백 파일 */}
+        {sub.revised && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gray-400)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.04em" }}>피드백 파일</div>
+            <iframe
+              srcDoc={sub.revised}
+              style={{
+                width: "100%", height: 480,
+                border: "1px solid #c8e6c9", borderRadius: 8,
+                background: "var(--green-light)",
+              }}
+              title="피드백"
+              sandbox="allow-same-origin"
+            />
+          </div>
+        )}
+
+        <div style={{ textAlign: "right" }}>
+          <button className="btn-primary" onClick={onClose}>닫기</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -638,11 +858,25 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext, checkLa
       <button className="btn-secondary" onClick={onPrev} disabled={idx === 0}>Prev</button>
       <div className="action-cluster">
         {extraAction}
-        {!checked && <button className="btn-primary" onClick={onCheck}>{checkLabel}</button>}
+        {onCheck && !checked && <button className="btn-primary" onClick={onCheck}>{checkLabel}</button>}
       </div>
       <button className="btn-secondary" onClick={onNext} disabled={idx === total - 1}>Next</button>
     </div>
   );
+}
+
+// 자동저장 훅: response가 바뀌면 2초 후 Firestore에 저장
+function useDebounceAutoSave(response, idx, timerStartedAt, recordWords) {
+  useEffect(() => {
+    if (idx === null || !response.trim()) return;
+    const timer = window.setTimeout(async () => {
+      const elapsedSeconds = timerStartedAt
+        ? Math.floor((Date.now() - timerStartedAt) / 1000)
+        : null;
+      await recordWords(idx, countWords(response), response, elapsedSeconds);
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [response, idx]);
 }
 
 function parseBold(text) {

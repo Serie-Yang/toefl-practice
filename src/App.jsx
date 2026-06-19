@@ -6,6 +6,7 @@ import Reading from "./pages/Reading";
 import Writing from "./pages/Writing";
 import Speaking from "./pages/Speaking";
 import MyMenu from "./pages/MyMenu";
+import Admin from "./pages/Admin";
 
 function PrivateRoute({ children }) {
   const { user } = useAuth();
@@ -52,6 +53,11 @@ export default function App() {
           <Route path="/mymenu" element={
             <PrivateRoute>
               <Layout><MyMenu /></Layout>
+            </PrivateRoute>
+          } />
+          <Route path="/admin" element={
+            <PrivateRoute>
+              <Layout><Admin /></Layout>
             </PrivateRoute>
           } />
         </Routes>
