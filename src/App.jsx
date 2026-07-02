@@ -7,6 +7,7 @@ import Writing from "./pages/Writing";
 import Speaking from "./pages/Speaking";
 import MyMenu from "./pages/MyMenu";
 import Admin from "./pages/Admin";
+import FeedbackButton from "./components/FeedbackButton";
 
 function PrivateRoute({ children }) {
   const { user } = useAuth();
@@ -20,6 +21,7 @@ function Layout({ children }) {
       <main className="main-content">
         {children}
       </main>
+      <FeedbackButton />
     </>
   );
 }

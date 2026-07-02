@@ -249,7 +249,10 @@ function EmailTask({ data, loading, error }) {
   const remainingSeconds = frozenSeconds !== null ? frozenSeconds : countingSeconds;
 
   // 자동저장: response가 바뀌면 2초 후 저장
-  useDebounceAutoSave(response, idx, timerStartedAt, recordWords);
+  useDebounceAutoSave(
+    response, idx, timerStartedAt, recordWords,
+    frozenSeconds !== null ? TOTAL_SECONDS - frozenSeconds : null
+  );
 
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
@@ -292,12 +295,13 @@ function EmailTask({ data, loading, error }) {
     setSubmitStatus("idle");
   }
 
-  function handleReset() {
+  async function handleReset() {
     setResponse("");
     setShowSample(false);
     setTimerStartedAt(Date.now());
     setFrozenSeconds(null);
     setSubmitStatus("idle");
+    await recordWords(idx, 0, "", null); 
   }
 
   function handleShowSample() {
@@ -410,8 +414,11 @@ function DiscussionTask({ data, loading, error }) {
   const remainingSeconds = frozenSeconds !== null ? frozenSeconds : countingSeconds;
 
   // 자동저장: response가 바뀌면 2초 후 저장
-  useDebounceAutoSave(response, idx, timerStartedAt, recordWords);
-
+  useDebounceAutoSave(
+    response, idx, timerStartedAt, recordWords,
+    frozenSeconds !== null ? TOTAL_SECONDS - frozenSeconds : null
+  );
+  
   if (loading) return <LoadingCard />;
   if (error) return <ErrorCard message={error} />;
   if (!data.length) return <EmptyCard />;
@@ -452,12 +459,13 @@ function DiscussionTask({ data, loading, error }) {
     setSubmitStatus("idle");
   }
 
-  function handleReset() {
+  async function handleReset() {
     setResponse("");
     setShowSample(false);
     setTimerStartedAt(Date.now());
     setFrozenSeconds(null);
     setSubmitStatus("idle");
+    await recordWords(idx, 0, "", null); 
   }
 
   function handleShowSample() {
@@ -872,18 +880,18 @@ function QuestionActions({ idx, total, checked, onPrev, onCheck, onNext, checkLa
   );
 }
 
-// 자동저장 훅: response가 바뀌면 2초 후 Firestore에 저장
-function useDebounceAutoSave(response, idx, timerStartedAt, recordWords) {
+// 자동저장: response가 바뀌면 2초 후 Firestore에 저장
+function useDebounceAutoSave(response, idx, timerStartedAt, recordWords, frozenElapsedSeconds = null) {
   useEffect(() => {
     if (idx === null || !response.trim()) return;
     const timer = window.setTimeout(async () => {
-      const elapsedSeconds = timerStartedAt
-        ? Math.floor((Date.now() - timerStartedAt) / 1000)
-        : null;
+      const elapsedSeconds = frozenElapsedSeconds !== null
+        ? frozenElapsedSeconds
+        : (timerStartedAt ? Math.floor((Date.now() - timerStartedAt) / 1000) : null);
       await recordWords(idx, countWords(response), response, elapsedSeconds);
     }, 2000);
     return () => window.clearTimeout(timer);
-  }, [response, idx]);
+  }, [response, idx, frozenElapsedSeconds]);
 }
 
 function parseBold(text) {

@@ -59,6 +59,8 @@ export function useMySubmissions(sectionKey) {
         byProblem[pi].push(data);
       });
       setSubmissions(byProblem);
+    } catch (err) {
+      console.error("useMySubmissions load error:", err);
     } finally {
       setLoading(false);
     }

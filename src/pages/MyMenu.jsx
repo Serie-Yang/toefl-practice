@@ -112,7 +112,7 @@ function WritingProgress({ group }) {
       </div>
       <div className="progress-subsections">
         <SubsectionAccuracy label="Build a Sentence" accuracy={sentence.accuracy} />
-        <WritingSubsection label="Write an Email" stats={email.writingStats} targetWords={120} />
+        <WritingSubsection label="Write an Email" stats={email.writingStats} targetWords={130} />
         <WritingSubsection label="Academic Discussion" stats={discussion.writingStats} targetWords={120} />
       </div>
     </div>

@@ -138,7 +138,7 @@ async function recordWritingAttempt(uid, sectionKey, problemIndex, wordCount, dr
     },
     byProblemWriting: {
       ...(section.byProblemWriting ?? {}),
-      [problemIndex]: [entry, ...prevHistory],
+      [problemIndex]: [entry, ...prevHistory].slice(0, 20),
     },
   };
 
@@ -150,9 +150,9 @@ async function getWritingStats(uid, sectionKey) {
   const data = await readSection(uid, sectionKey);
   const byProblemWriting = data.byProblemWriting ?? {};
   const attempted = Object.keys(byProblemWriting).length;
-  const allEntries = Object.values(byProblemWriting).flatMap((entries) => entries);
-  const avgWords = allEntries.length
-    ? Math.round(allEntries.reduce((sum, e) => sum + (e.wordCount ?? 0), 0) / allEntries.length)
+  const latestEntries = Object.values(byProblemWriting).map((entries) => entries[0]).filter(Boolean);
+  const avgWords = latestEntries.length
+    ? Math.round(latestEntries.reduce((sum, e) => sum + (e.wordCount ?? 0), 0) / latestEntries.length)
     : null;
   return { attempted, avgWords };
 }
