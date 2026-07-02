@@ -279,11 +279,15 @@ function EmailTask({ data, loading, error }) {
 
   function openQuestion(nextIdx) {
     const draft = getLastDraft ? getLastDraft(nextIdx) : "";
+    const lastElapsed = writingHistory[nextIdx]?.[0]?.elapsedSeconds ?? null;
+    // 이전에 멈춘 시간이 있으면 복원, 없으면 타이머 새로 시작
+    const hasFrozen = lastElapsed !== null;
+    const restored = hasFrozen ? Math.max(TOTAL_SECONDS - lastElapsed, 0) : null;
     setIdx(nextIdx);
     setResponse(draft);
     setShowSample(false);
-    setTimerStartedAt(draft ? null : Date.now());
-    setFrozenSeconds(null);
+    setTimerStartedAt(hasFrozen ? null : Date.now()); // frozen이면 타이머 안 켬
+    setFrozenSeconds(restored);
     setShowReport(false);
     setSubmitStatus("idle");
   }
@@ -297,14 +301,14 @@ function EmailTask({ data, loading, error }) {
   }
 
   function handleShowSample() {
-    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setFrozenSeconds(countingSeconds);
     setTimerStartedAt(null);
     setShowSample(true);
   }
 
   async function handleSubmitForReview() {
     if (!response.trim()) return;
-    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    setFrozenSeconds(countingSeconds);
     setTimerStartedAt(null);
     setSubmitStatus("sending");
     try {
@@ -436,11 +440,14 @@ function DiscussionTask({ data, loading, error }) {
 
   function openQuestion(nextIdx) {
     const draft = getLastDraft ? getLastDraft(nextIdx) : "";
+    const lastElapsed = writingHistory[nextIdx]?.[0]?.elapsedSeconds ?? null;
+    const hasFrozen = lastElapsed !== null;
+    const restored = hasFrozen ? Math.max(TOTAL_SECONDS - lastElapsed, 0) : null;
     setIdx(nextIdx);
     setResponse(draft);
     setShowSample(false);
-    setTimerStartedAt(draft ? null : Date.now());
-    setFrozenSeconds(null);
+    setTimerStartedAt(hasFrozen ? null : Date.now());
+    setFrozenSeconds(restored);
     setShowReport(false);
     setSubmitStatus("idle");
   }
