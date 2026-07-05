@@ -52,6 +52,7 @@ function TakeAnInterview() {
   const [questionIdx, setQuestionIdx] = useState(0);
   const [showSample, setShowSample] = useState(false);
   const [shownSamples, setShownSamples] = useState(new Set());
+  const [startedTimers, setStartedTimers] = useState(new Set());
   const [timerStartedAt, setTimerStartedAt] = useState(null);
   const [timerBaseSeconds, setTimerBaseSeconds] = useState(45);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -86,6 +87,10 @@ function TakeAnInterview() {
   const current = questions[questionIdx] ?? questions[0];
 
   function resetQuestion(nextInterview = idx, nextQuestion = 0) {
+    // 다른 인터뷰 세트로 이동할 때만 타이머 기록 초기화 (같은 인터뷰 내 문항 이동 시에는 유지)
+    if (nextInterview !== idx) {
+      setStartedTimers(new Set());
+    }
     setIdx(nextInterview);
     setQuestionIdx(nextQuestion);
     setShowSample(false);
@@ -94,12 +99,9 @@ function TakeAnInterview() {
     resetSpeechTimer();
   }
 
-  async function moveQuestion(direction) {
+  function moveQuestion(direction) {
     const next = questionIdx + direction;
     if (next >= 0 && next < questions.length) {
-      if (next === questions.length - 1) {
-        await record(idx, true);
-      }
       resetQuestion(idx, next);
     }
   }
@@ -110,11 +112,19 @@ function TakeAnInterview() {
     setShowSample(true);
   }
 
-  function startSpeechTimer() {
+  async function startSpeechTimer() {
     if (speechTimerSeconds === 0) return;
     setTimerStartedAt(Date.now());
     setTimerBaseSeconds(speechTimerSeconds);
     setTimerRunning(true);
+
+    const next = new Set(startedTimers).add(questionIdx);
+    const alreadyComplete = startedTimers.size === questions.length;
+    setStartedTimers(next);
+    // 4개 질문 모두 최소 한 번씩 타이머를 시작했을 때만 완료로 기록
+    if (next.size === questions.length && !alreadyComplete) {
+      await record(idx, true);
+    }
   }
 
   function resetSpeechTimer() {
