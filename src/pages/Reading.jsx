@@ -91,7 +91,8 @@ function CompleteTheWords() {
 
   const row = data[idx];
   const answers = Array.from({ length: 10 }, (_, i) => row[`answer_${i + 1}`]).filter(Boolean);
-  const tokens = buildBlankTokens(row.text, answers.length);
+  const rawTokens = buildBlankTokens(row.text, answers.length);
+  const tokens = groupWordUnits(rawTokens);
 
   function getInputValue(blankIndex) {
     return (inputs[blankIndex] ?? []).join("");
@@ -110,6 +111,52 @@ function CompleteTheWords() {
     setChecked(true);
   }
 
+  // blank 하나를 렌더링하는 함수 (word-blank로 묶인 경우와 단독인 경우 모두 사용)
+  function renderBlank(token, key) {
+    const answer = answers[token.blankIndex] ?? "";
+    const letterCount = token.letterCount ?? answer.length;
+    const letters = inputs[token.blankIndex] ?? Array(letterCount).fill("");
+    const typedValue = letters.join("");
+    const isCorrect = normalizeAnswer(typedValue) === normalizeAnswer(answer);
+
+    function handleLetterChange(letterIdx, char) {
+      const next = [...(inputs[token.blankIndex] ?? Array(letterCount).fill(""))];
+      next[letterIdx] = char.slice(-1);
+      setInputs((prev) => ({ ...prev, [token.blankIndex]: next }));
+      if (char && letterIdx < letterCount - 1) {
+        document.getElementById(`blank-${token.blankIndex}-${letterIdx + 1}`)?.focus();
+      }
+    }
+
+    function handleLetterKeyDown(letterIdx, e) {
+      if (e.key === "Backspace" && !letters[letterIdx] && letterIdx > 0) {
+        document.getElementById(`blank-${token.blankIndex}-${letterIdx - 1}`)?.focus();
+      }
+    }
+
+    return (
+      <span className="letter-blank-wrap" key={key}>
+        {Array.from({ length: letterCount }, (_, letterIdx) => (
+          <input
+            key={letterIdx}
+            id={`blank-${token.blankIndex}-${letterIdx}`}
+            className={`letter-input ${checked ? (isCorrect ? "correct" : "incorrect") : ""}`}
+            value={letters[letterIdx] ?? ""}
+            onChange={(e) => handleLetterChange(letterIdx, e.target.value)}
+            onKeyDown={(e) => handleLetterKeyDown(letterIdx, e)}
+            disabled={checked}
+            maxLength={1}
+          />
+        ))}
+        {checked && (
+          <span className={`inline-answer ${isCorrect ? "" : "incorrect-answer"}`}>
+            {isCorrect ? "✓" : answer}
+          </span>
+        )}
+      </span>
+    );
+  }
+
   // 채점 후: index 0이 방금 제출한 시도 → slice(1)부터가 이전 시도
   const currentClozeHistory = clozeHistory[idx] ?? [];
   const previousClozeAttempts = checked ? currentClozeHistory.slice(1) : currentClozeHistory;
@@ -126,46 +173,16 @@ function CompleteTheWords() {
         {tokens.map((token, tokenIdx) => {
           if (token.type === "text") return <span key={tokenIdx}>{token.value}</span>;
 
-          const answer = answers[token.blankIndex] ?? "";
-          const letterCount = token.letterCount ?? answer.length;
-          const letters = inputs[token.blankIndex] ?? Array(letterCount).fill("");
-          const typedValue = letters.join("");
-          const isCorrect = normalizeAnswer(typedValue) === normalizeAnswer(answer);
-
-          function handleLetterChange(letterIdx, char) {
-            const next = [...(inputs[token.blankIndex] ?? Array(letterCount).fill(""))];
-            next[letterIdx] = char.slice(-1);
-            setInputs((prev) => ({ ...prev, [token.blankIndex]: next }));
-            if (char && letterIdx < letterCount - 1) {
-              document.getElementById(`blank-${token.blankIndex}-${letterIdx + 1}`)?.focus();
-            }
+          if (token.type === "blank") {
+            return renderBlank(token, tokenIdx);
           }
 
-          function handleLetterKeyDown(letterIdx, e) {
-            if (e.key === "Backspace" && !letters[letterIdx] && letterIdx > 0) {
-              document.getElementById(`blank-${token.blankIndex}-${letterIdx - 1}`)?.focus();
-            }
-          }
-
+          // word-blank: prefix + blank + suffix를 하나로 묶어 줄바꿈 중간에서 끊기지 않도록 함
           return (
-            <span className="letter-blank-wrap" key={tokenIdx}>
-              {Array.from({ length: letterCount }, (_, letterIdx) => (
-                <input
-                  key={letterIdx}
-                  id={`blank-${token.blankIndex}-${letterIdx}`}
-                  className={`letter-input ${checked ? (isCorrect ? "correct" : "incorrect") : ""}`}
-                  value={letters[letterIdx] ?? ""}
-                  onChange={(e) => handleLetterChange(letterIdx, e.target.value)}
-                  onKeyDown={(e) => handleLetterKeyDown(letterIdx, e)}
-                  disabled={checked}
-                  maxLength={1}
-                />
-              ))}
-              {checked && (
-                <span className={`inline-answer ${isCorrect ? "" : "incorrect-answer"}`}>
-                  {isCorrect ? "✓" : answer}
-                </span>
-              )}
+            <span key={tokenIdx} style={{ whiteSpace: "nowrap" }}>
+              {token.prefix}
+              {renderBlank(token.blank, `${tokenIdx}-blank`)}
+              {token.suffix}
             </span>
           );
         })}
@@ -453,6 +470,57 @@ function buildBlankTokens(text = "", answerCount = 0) {
   }
 
   return tokens.length ? tokens : [{ type: "text", value: text }];
+}
+
+// blank 앞뒤에 공백 없이 바로 붙어있는 단어 조각(prefix/suffix)을 blank와
+// 하나로 묶어서, 화면 줄바꿈 시 "adm" + "____"처럼 단어 중간이 끊기지 않도록 함.
+// 예: "adm________" → text 토큰 "adm" + blank 토큰을
+//     { type: "word-blank", prefix: "adm", blank: {...}, suffix: "" } 로 병합
+function groupWordUnits(tokens) {
+  const out = [];
+  const working = tokens.map((t) => ({ ...t }));
+
+  for (let i = 0; i < working.length; i++) {
+    const tok = working[i];
+
+    if (tok.type === "blank") {
+      // 직전 text 토큰의 끝부분(공백 없이 이어지는 부분)을 prefix로 떼어옴
+      let prefix = "";
+      if (out.length && out[out.length - 1].type === "text") {
+        const prev = out[out.length - 1];
+        const m = prev.value.match(/(\S*)$/);
+        prefix = m ? m[1] : "";
+        const remainder = prev.value.slice(0, prev.value.length - prefix.length);
+        if (remainder) {
+          out[out.length - 1] = { ...prev, value: remainder };
+        } else {
+          out.pop();
+        }
+      }
+
+      // 다음 text 토큰의 앞부분(공백 없이 이어지는 부분)을 suffix로 떼어옴
+      let suffix = "";
+      let nextConsumed = false;
+      const nextTok = working[i + 1];
+      if (nextTok && nextTok.type === "text") {
+        const m = nextTok.value.match(/^(\S*)/);
+        suffix = m ? m[1] : "";
+        const remainder = nextTok.value.slice(suffix.length);
+        if (remainder) {
+          working[i + 1] = { ...nextTok, value: remainder };
+        } else {
+          nextConsumed = true;
+        }
+      }
+
+      out.push({ type: "word-blank", blank: tok, prefix, suffix });
+      if (nextConsumed) i += 1;
+    } else {
+      out.push(tok);
+    }
+  }
+
+  return out;
 }
 
 function normalizeAnswer(value = "") {
