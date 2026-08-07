@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import emailjs from "@emailjs/browser";
 import { useSheetData } from "../hooks/useSheetData";
 import { useSectionProgress } from "../useProgress";
-import { useMySubmissions } from "../useSubmissions";
+import { useMySubmissions, useWritingReviewLimit } from "../useSubmissions";
 import { useAuth } from "../context/AuthContext";
 
 const SECTIONS = [
@@ -233,6 +233,7 @@ function AcademicDiscussion() {
 function EmailTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_email");
   const { submissions, submit: submitForReview } = useMySubmissions("writing_email");
+  const reviewLimit = useWritingReviewLimit(2);
   const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
@@ -311,12 +312,13 @@ function EmailTask({ data, loading, error }) {
   }
 
   async function handleSubmitForReview() {
-    if (!response.trim()) return;
+    if (!response.trim() || reviewLimit.limitReached) return;
     setFrozenSeconds(countingSeconds);
     setTimerStartedAt(null);
     setSubmitStatus("sending");
     try {
       await submitForReview(idx, problemLabel, response, words);
+      await reviewLimit.reload();
       setSubmitStatus("done");
     } catch {
       setSubmitStatus("error");
@@ -374,6 +376,7 @@ function EmailTask({ data, loading, error }) {
         response={response}
         status={submitStatus}
         latestSub={latestSub}
+        reviewLimit={reviewLimit}
         onSubmit={handleSubmitForReview}
         onViewFeedback={() => setFeedbackSub(latestSub)}
       />
@@ -398,7 +401,7 @@ function EmailTask({ data, loading, error }) {
 function DiscussionTask({ data, loading, error }) {
   const { results, recordWords, getLastDraft, writingHistory } = useSectionProgress("writing_discussion");
   const { submissions, submit: submitForReview } = useMySubmissions("writing_discussion");
-  const [idx, setIdx] = useState(null);
+  const reviewLimit = useWritingReviewLimit(2);  const [idx, setIdx] = useState(null);
   const [response, setResponse] = useState("");
   const [showSample, setShowSample] = useState(false);
   const [timerStartedAt, setTimerStartedAt] = useState(null);
@@ -475,12 +478,13 @@ function DiscussionTask({ data, loading, error }) {
   }
 
   async function handleSubmitForReview() {
-    if (!response.trim()) return;
-    setFrozenSeconds(countingSeconds); // 현재 남은 시간에서 freeze
+    if (!response.trim() || reviewLimit.limitReached) return;
+    setFrozenSeconds(countingSeconds);
     setTimerStartedAt(null);
     setSubmitStatus("sending");
     try {
       await submitForReview(idx, problemLabel, response, words);
+      await reviewLimit.reload();
       setSubmitStatus("done");
     } catch {
       setSubmitStatus("error");
@@ -539,6 +543,7 @@ function DiscussionTask({ data, loading, error }) {
         response={response}
         status={submitStatus}
         latestSub={latestSub}
+        reviewLimit={reviewLimit}
         onSubmit={handleSubmitForReview}
         onViewFeedback={() => setFeedbackSub(latestSub)}
       />
@@ -641,8 +646,12 @@ function WritingStatusDots({ history, targetWords, subList = [], onFeedbackClick
 }
 
 // ── Submit for Review 영역 ─────────────────────────────────
-function SubmitForReviewSection({ response, status, latestSub, onSubmit, onViewFeedback }) {
+function SubmitForReviewSection({ response, status, latestSub, reviewLimit, onSubmit, onViewFeedback }) {
   const hasText = response.trim().length > 0;
+  const { remaining, maxCount, limitReached, loading: limitLoading } = reviewLimit;
+
+  // 이번 제출로 소진되는 잠금 상황: 대기중/완료된 제출이 없는데 한도를 다 쓴 경우
+  const showLockedMessage = limitReached && latestSub?.status !== "pending";
 
   return (
     <div style={{
@@ -656,6 +665,14 @@ function SubmitForReviewSection({ response, status, latestSub, onSubmit, onViewF
         <div style={{ fontSize: 12, color: "var(--gray-400)", marginTop: 2 }}>
           작성한 글을 제출하면 점수와 피드백을 받을 수 있습니다.
         </div>
+        {!limitLoading && (
+          <div style={{
+            fontSize: 12, fontWeight: 700, marginTop: 6,
+            color: limitReached ? "var(--red)" : "var(--blue)",
+          }}>
+            남은 제출 횟수: {remaining}/{maxCount}
+          </div>
+        )}
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
         {latestSub?.status === "reviewed" && (
@@ -670,11 +687,18 @@ function SubmitForReviewSection({ response, status, latestSub, onSubmit, onViewF
           }}>
             ⏳ 검토 중
           </span>
+        ) : showLockedMessage ? (
+          <span style={{
+            fontSize: 13, fontWeight: 700, padding: "8px 14px", borderRadius: 7,
+            background: "var(--red-light)", color: "var(--red)", border: "1px solid #ffcdd2",
+          }}>
+            🔒 제출 횟수를 모두 사용했습니다
+          </span>
         ) : (
           <button
             className="btn-primary"
             onClick={onSubmit}
-            disabled={!hasText || status === "sending"}
+            disabled={!hasText || status === "sending" || limitReached}
           >
             {status === "sending" ? "제출 중..." : status === "done" ? "제출 완료 ✓" : "제출하기"}
           </button>

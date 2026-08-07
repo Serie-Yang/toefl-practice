@@ -129,3 +129,37 @@ export function useAllSubmissions() {
 
   return { submissions, loading, review, reload: load };
 }
+
+// ── 라이팅 피드백 제출 횟수 제한 (Email + Discussion 합산) ──
+const WRITING_REVIEW_SECTION_KEYS = ["writing_email", "writing_discussion"];
+
+export function useWritingReviewLimit(maxCount = 2) {
+  const { user } = useAuth();
+  const uid = user?.uid;
+
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    if (!uid) return;
+    setLoading(true);
+    try {
+      const q = query(
+        collection(db, "submissions"),
+        where("uid", "==", uid),
+        where("sectionKey", "in", WRITING_REVIEW_SECTION_KEYS)
+      );
+      const snap = await getDocs(q);
+      setCount(snap.size);
+    } finally {
+      setLoading(false);
+    }
+  }, [uid]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const remaining = Math.max(maxCount - count, 0);
+  const limitReached = count >= maxCount;
+
+  return { count, remaining, maxCount, limitReached, loading, reload: load };
+}
